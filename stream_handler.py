@@ -3,6 +3,7 @@
 from utils import SlotDefinedClass
 
 import itertools
+import collections
 
 
 class StreamHandler(SlotDefinedClass):
@@ -69,40 +70,32 @@ class StreamHandler(SlotDefinedClass):
             self.pop_char()
 
 
-def partition_stream_handler(handler, *args):
-    if not args:
-        return []
+def partition_stream_handler(handler, n):
+    def partitions(handler, *args):
+        if not args:
+            return []
 
-    first_part = copy.deepcopy(handler)
+        first_part = copy.deepcopy(handler)
 
-    if len(args) == 1 or not first_part.char:
-        return [first_part]
+        if len(args) == 1 or not first_part.char:
+            return [first_part]
 
-    # Create 1st partition of size
-    copied_handler = copy.deepcopy(first_part)
-    size = args[0]
-    first_part.end = size
+        # Create 1st partition of size
+        copied_handler = copy.deepcopy(first_part)
+        size = args[0]
+        first_part.end = size
 
-    # Advance remaining
-    copied_handler.advance(size)
+        # Advance remaining
+        copied_handler.advance(size)
 
-    # copied_handler is now the rest of the stream
-    return [first_part] + partition_stream_handler(copied_handler, *args[1:])
+        # copied_handler is now the rest of the stream
+        return [first_part] + partitions(copied_handler, *args[1:])
+
+    for nums in sum_to_n(len(lst), n):
+        yield partitions()
 
 
-# Thanks: http://stackoverflow.com/a/2065624
-def sum_to_n(n, size=None):
-    """Generate the series of +ve integer lists which sum to a +ve integer, n."""
-    from operator import sub
-    mid = xrange(1, n)
-    splits = (d for i in xrange(n) for d in itertools.combinations(mid, i))
-    for s in splits:
-        combo = map(sub, itertools.chain(s, [n]), itertools.chain([0], s))
-        if size is not None:
-            if len(combo) == size:
-                yield combo
-        else:
-            yield combo
+
 
 
 def partition_list(lst, n):
@@ -116,11 +109,3 @@ def partition_list(lst, n):
         yield parts
 
 
-def all_partitions(handler, n):
-    """Generate all possible n partitions until one partition is empty."""
-
-
-if __name__ == "__main__":
-    lst = range(10)
-    for parts in partition_list(lst, 3):
-        print(parts)
