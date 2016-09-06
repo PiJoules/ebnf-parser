@@ -3,7 +3,8 @@
 
 from __future__ import print_function
 
-from utils import SlotDefinedClass, base_parse_args
+from utils import SlotDefinedClass, base_parse_args, char_generator
+from stream_handler import StreamHandler
 
 import logging
 import sys
@@ -29,15 +30,17 @@ exception: -
 """
 
 
-def char_generator(filename):
-    with open(filename, "r") as f:
-        for line in f:
-            for c in line:
-                yield c
-
-
 class ParseError(Exception):
+    """Called when an error is found while parsing."""
+    pass
+
+
+class RuleSyntaxError(Exception):
     def __init__(self, line_no, col_no, expected=None, found=None, message=None):
+        if expected:
+            expected = expected.replace("\n", "\\n")
+        if found:
+            found = found.replace("\n", "\\n")
         msg = "Unable to parse token on line {}, col {}.".format(line_no, col_no)
         if message:
             msg += " {}".format(message)
@@ -46,65 +49,11 @@ class ParseError(Exception):
                 msg += " Expected {}.".format(expected)
             if found:
                 msg += " Found '{}'.".format(found)
-        super(ParseError, self).__init__(msg)
+        super(RuleSyntaxError, self).__init__(msg)
 
     @classmethod
     def from_stream_handler(cls, stream_handler, **kwargs):
         return cls(stream_handler.line_no, stream_handler.col_no, **kwargs)
-
-
-class StreamHandler(SlotDefinedClass):
-    """Class for handling iterating through a stream of characters."""
-    __types__ = (str, int, int)
-    __slots__ = ("char", "line_no", "col_no", "char_iter")
-
-    def __init__(self, char_iter):
-        self.char_iter = char_iter
-        self.line_no = 1
-        self.col_no = 1
-        self.__pop_without_increment()
-
-    def __pop_without_increment(self):
-        self.char = next(self.char_iter, "")
-
-    def pop_char(self):
-        """Get the next character and increment the location."""
-        if self.char:
-            if self.char == "\n":
-                self.line_no += 1
-                self.col_no = 1
-            else:
-                self.col_no += 1
-            self.__pop_without_increment()
-
-    def __copy_iter(self):
-        char_iter = self.char_iter
-        char_iter, copied_iter = itertools.tee(self.char_iter)
-        self.char_iter = char_iter
-        return copied_iter
-
-    def peek_chars(self, n):
-        """
-        Get the next n items in the stream as a list. The current char is not
-        part of this list.
-        """
-        copied_iter = self.__copy_iter()
-        elems = itertools.islice(copied_iter, n)
-        return list(elems)
-
-    def __deepcopy__(self, memo):
-        """
-        Create a copy of the handler such that advancing this iterator
-        will not advance the copied iterator.
-        """
-        copied_iter = self.__copy_iter()
-        handler = StreamHandler(copied_iter)
-        handler.update(self)
-        return handler
-
-    def update(self, handler):
-        """Update the properties of this handler to match those of another."""
-        super(StreamHandler, self).update(**handler.json())
 
 
 class ProductionRule(SlotDefinedClass):
@@ -124,12 +73,23 @@ class ProductionRule(SlotDefinedClass):
         self._parse()
 
     @classmethod
+    def from_whole_stream(cls, stream_handler):
+        """
+        Asserts that the entire stream is also exhausted. This is meant for
+        production rules that take up the whole file or string.
+        """
+        inst = cls(stream_handler)
+        if stream_handler.char:
+            raise ParseError("Expected this rule to take up the whole stream. Cut off at line {}, col {}.".format(stream_handler.line_no, stream_handler.col_no))
+        return inst
+
+    @classmethod
     def from_filename(cls, filename):
-        return cls(StreamHandler(char_generator(filename)))
+        return cls.from_whole_stream(StreamHandler(char_generator(filename)))
 
     @classmethod
     def from_str(cls, s):
-        return cls(StreamHandler(s))
+        return cls.from_whole_stream(StreamHandler(s))
 
     def _pop_char(self):
         self.__handler.pop_char()
@@ -145,7 +105,7 @@ class ProductionRule(SlotDefinedClass):
         raise NotImplementedError
 
     def _raise_parse_error(self, **kwargs):
-        raise ParseError.from_stream_handler(
+        raise RuleSyntaxError.from_stream_handler(
             self._stream_handler(),
             found=self._char(),
             **kwargs
@@ -162,7 +122,7 @@ class ProductionRule(SlotDefinedClass):
         try:
             copied_handler = copy.deepcopy(stream_handler)
             inst = cls(copied_handler)
-        except ParseError:
+        except RuleSyntaxError:
             return None
 
         stream_handler.update(copied_handler)
@@ -186,7 +146,7 @@ class TerminatingString(ProductionRule):
         for c in expected:
             acc += self._char()
             if self._char() != c:
-                raise ParseError(
+                raise RuleSyntaxError(
                     line_no=line_no,
                     col_no=col_no,
                     expected=expected,
@@ -201,7 +161,7 @@ class TerminatingString(ProductionRule):
         try:
             copied_handler = copy.deepcopy(stream_handler)
             inst = cls(copied_handler, expected)
-        except ParseError:
+        except RuleSyntaxError:
             return None
 
         stream_handler.update(copied_handler)
@@ -229,7 +189,7 @@ class Digit(ProductionRule):
 
 
 class Symbol(ProductionRule):
-    SYMBOLS = "[]{}()<>=|.,;"
+    SYMBOLS = "[]{}()<>=|.,;'\""
 
     def _parse(self):
         if not self._char() in self.SYMBOLS:
@@ -240,10 +200,10 @@ class Symbol(ProductionRule):
         self._pop_char()
 
 
-class OptionalSpaces(ProductionRule):
+class OptionalWhitespace(ProductionRule):
     def _parse(self):
         productions = ""
-        while self._char() == " ":
+        while self._char().isspace():
             productions += self._char()
 
             # Advance buffer
@@ -251,10 +211,10 @@ class OptionalSpaces(ProductionRule):
         self.productions = productions
 
 
-class Spaces(ProductionRule):
+class Whitespace(ProductionRule):
     def _parse(self):
         productions = TerminatingString(self._stream_handler(), " ").productions
-        self.productions = productions + OptionalSpaces(self._stream_handler()).productions
+        self.productions = productions + OptionalWhitespace(self._stream_handler()).productions
 
 
 class Identifier(ProductionRule):
@@ -301,58 +261,22 @@ class Character(ProductionRule):
 
 class Terminal(ProductionRule):
     def _parse(self):
-        try:
-            productions = []
-            copied_handler = copy.deepcopy(self._stream_handler())
+        open_quote = self._char()
+        if not (open_quote == "\"" or open_quote == "'"):
+            self._raise_parse_error(expected="either single or double quote")
 
-            d_quote = TerminatingString(copied_handler, '"').productions
-            productions.append(d_quote)
+        productions = open_quote
+        self._pop_char()
+        while self._char() != open_quote:
+            # Handle escaped characters starting with backslash
+            if self._char() == "\\":
+                productions += self._char()
+                self._pop_char()
+            productions += self._char()
+            self._pop_char()
 
-            character = Character(copied_handler)
-            productions.append(character)
-
-            while True:
-                character = Character.try_to_create(copied_handler)
-                if character:
-                    productions.append(character)
-                    continue
-                break
-
-            d_quote = TerminatingString(copied_handler, '"').productions
-            productions.append(d_quote)
-            self._stream_handler().update(copied_handler)
-            print("terminating string:", self._stream_handler().json())
-            self.productions = productions
-            return
-        except ParseError:
-            pass
-
-        try:
-            productions = []
-            copied_handler = copy.deepcopy(self._stream_handler())
-
-            quote = TerminatingString(copied_handler, "'").productions
-            productions.append(d_quote)
-
-            character = Character(copied_handler)
-            productions.append(character)
-
-            while True:
-                character = Character.try_to_create(copied_handler)
-                if character:
-                    productions.append(character)
-                    continue
-                break
-
-            quote = TerminatingString(copied_handler, "'").productions
-            productions.append(d_quote)
-            self._stream_handler().update(copied_handler)
-            self.productions = productions
-            return
-        except ParseError:
-            pass
-
-        self._raise_parse_error(message="Unable to make string literal.")
+        self.productions = productions + open_quote
+        self._pop_char()
 
 
 class Lhs(ProductionRule):
@@ -361,76 +285,174 @@ class Lhs(ProductionRule):
 
         identifier = Identifier(self._stream_handler())
         productions.append(identifier)
-        print("identifier:", identifier)
 
         self.productions = productions
 
 
+class Repetition(ProductionRule):
+    def _parse(self):
+        productions = []
+
+        literal = TerminatingString(self._stream_handler(), "{")
+        productions.append(literal.productions)
+
+        spaces = OptionalWhitespace(self._stream_handler())
+
+        rhs = Rhs(self._stream_handler())
+        productions.append(rhs)
+
+        OptionalWhitespace(self._stream_handler())
+
+        literal = TerminatingString(self._stream_handler(), "}")
+        productions.append(literal.productions)
+
+        self.productions = productions
+
+
+class Alternation(ProductionRule):
+    def _parse(self):
+        pass
+
+
 class Rhs(ProductionRule):
     def _parse(self):
+        # "{", rhs, "}"
         try:
             productions = []
             copied_handler = copy.deepcopy(self._stream_handler())
 
-            print(1)
+            productions.append(Repetition(copied_handler))
+
+            self._stream_handler().update(copied_handler)
+            self.productions = productions
+            return
+        except RuleSyntaxError:
+            pass
+
+        # terminal, ",", rhs
+        try:
+            productions = []
+            copied_handler = copy.deepcopy(self._stream_handler())
+
+            terminal = Terminal(copied_handler)
+            productions.append(terminal)
+
+            spaces = OptionalWhitespace(copied_handler)
+
+            literal = TerminatingString(copied_handler, ",")
+            productions.append(literal.productions)
+
+            OptionalWhitespace(copied_handler)
+
+            rhs = Rhs(copied_handler)
+            productions.append(rhs)
+
+            self._stream_handler().update(copied_handler)
+            self.productions = productions
+            return
+        except RuleSyntaxError:
+            pass
+
+        # identifier, ",", rhs
+        try:
+            productions = []
+            copied_handler = copy.deepcopy(self._stream_handler())
+
             identifier = Identifier(copied_handler)
             productions.append(identifier)
-            print("identifier:", identifier)
 
-            literal = TerminatingString(copied_handler, "|")
+            spaces = OptionalWhitespace(copied_handler)
+
+            literal = TerminatingString(copied_handler, ",")
             productions.append(literal.productions)
-            print("literal:", literal)
+
+            OptionalWhitespace(copied_handler)
 
             rhs = Rhs(copied_handler)
             productions.append(rhs)
-            print("rhs2:", rhs)
 
             self._stream_handler().update(copied_handler)
             self.productions = productions
-        except ParseError:
+            return
+        except RuleSyntaxError:
             pass
 
+        # terminal, "|", rhs
         try:
-            productions = []
-            copied_handler = copy.deepcopy(self._stream_handler())
-
-            print(2)
-            terminal = Terminal(copied_handler)
-            print(21)
-            productions.append(terminal)
-            print("terminal:", terminal)
-
-            OptionalSpaces(copied_handler)
-            print(copied_handler.json())
-
-            literal = TerminatingString(copied_handler, "|")
-            productions.append(literal.productions)
-            print("literal:", literal)
-
-            OptionalSpaces(copied_handler)
-
-            print("handler:", copied_handler.json())
-            rhs = Rhs(copied_handler)
-            productions.append(rhs)
-            print("rhs2:", rhs)
-
-            self._stream_handler().update(copied_handler)
-            self.productions = productions
-        except ParseError:
-            pass
-
-        try:
-            # terminal
             productions = []
             copied_handler = copy.deepcopy(self._stream_handler())
 
             terminal = Terminal(copied_handler)
             productions.append(terminal)
-            print("terminal:", terminal)
+
+            spaces = OptionalWhitespace(copied_handler)
+
+            literal = TerminatingString(copied_handler, "|")
+            productions.append(literal.productions)
+
+            OptionalWhitespace(copied_handler)
+
+            rhs = Rhs(copied_handler)
+            productions.append(rhs)
 
             self._stream_handler().update(copied_handler)
             self.productions = productions
-        except ParseError:
+            return
+        except RuleSyntaxError:
+            #LOGGER.debug("failed on copied_handler: {}".format(copied_handler))
+            pass
+
+        # identifier, "|", rhs
+        try:
+            productions = []
+            copied_handler = copy.deepcopy(self._stream_handler())
+
+            identifier = Identifier(copied_handler)
+            productions.append(identifier)
+
+            spaces = OptionalWhitespace(copied_handler)
+
+            literal = TerminatingString(copied_handler, "|")
+            productions.append(literal.productions)
+
+            OptionalWhitespace(copied_handler)
+
+            rhs = Rhs(copied_handler)
+            productions.append(rhs)
+
+            self._stream_handler().update(copied_handler)
+            self.productions = productions
+            return
+        except RuleSyntaxError:
+            #LOGGER.debug("failed on copied_handler: {}".format(copied_handler))
+            pass
+
+        # identifier
+        try:
+            productions = []
+            copied_handler = copy.deepcopy(self._stream_handler())
+
+            identifier = Identifier(copied_handler)
+            productions.append(identifier)
+
+            self._stream_handler().update(copied_handler)
+            self.productions = productions
+            return
+        except RuleSyntaxError:
+            pass
+
+        # terminal
+        try:
+            productions = []
+            copied_handler = copy.deepcopy(self._stream_handler())
+
+            terminal = Terminal(copied_handler)
+            productions.append(terminal)
+
+            self._stream_handler().update(copied_handler)
+            self.productions = productions
+            return
+        except RuleSyntaxError:
             pass
 
         self._raise_parse_error(message="Unable to create right hand side of rule.")
@@ -442,22 +464,26 @@ class Rule(ProductionRule):
 
         lhs = Lhs(self._stream_handler())
         print("lhs:", lhs)
+        productions.append(lhs)
 
-        optional_spaces = OptionalSpaces(self._stream_handler())
+        optional_spaces = OptionalWhitespace(self._stream_handler())
         productions.append(optional_spaces)
-        print("optional_spaces:", optional_spaces)
 
-        literal = TerminatingString(self._stream_handler(), "=").productions
+        literal = TerminatingString(self._stream_handler(), "=")
         productions.append(literal)
-        print("equals sign:", literal)
 
-        optional_spaces = OptionalSpaces(self._stream_handler())
+        optional_spaces = OptionalWhitespace(self._stream_handler())
         productions.append(optional_spaces)
-        print("optional_spaces:", optional_spaces)
 
         rhs = Rhs(self._stream_handler())
-        productions.append(rhs)
         print("rhs:", rhs)
+        productions.append(rhs)
+
+        whitespace = OptionalWhitespace(self._stream_handler())
+        productions.append(whitespace)
+
+        literal = TerminatingString(self._stream_handler(), ";")
+        productions.append(literal)
 
         self.productions = productions
 
@@ -465,10 +491,15 @@ class Rule(ProductionRule):
 class Grammar(ProductionRule):
     def _parse(self):
         productions = []
-        rule = Rule(self._stream_handler())
+        rule = Rule.try_to_create(self._stream_handler())
         while rule:
+            print("rule:", rule)
             productions.append(rule)
-            rule = Rule(self._stream_handler())
+
+            whitespace = OptionalWhitespace(self._stream_handler())
+            productions.append(whitespace)
+
+            rule = Rule.try_to_create(self._stream_handler())
         self.productions = productions
 
 

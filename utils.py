@@ -5,6 +5,13 @@ import logging
 import sys
 
 
+def char_generator(filename):
+    with open(filename, "r") as f:
+        for line in f:
+            for c in line:
+                yield c
+
+
 def base_parse_args(parser, name=None):
     """Add various arguments for more verbosity."""
 
