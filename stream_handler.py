@@ -8,15 +8,22 @@ import itertools
 class StreamHandler(SlotDefinedClass):
     """Class for handling iterating through a stream of characters."""
     __types__ = (str, int, int)
-    __slots__ = ("char", "line_no", "col_no", "char_iter")
+    __slots__ = ("char", "line_no", "col_no", "char_iter", "end", "pos")
 
-    def __init__(self, char_iter, line_no=1, col_no=1):
+    def __init__(self, char_iter, line_no=1, col_no=1, end=None, pos=0):
         self.char_iter = char_iter
         self.line_no = line_no
         self.col_no = col_no
+        self.end = end
+        self.pos = pos
         self.__pop_without_increment()
 
     def __pop_without_increment(self):
+        if self.end is not None:
+            self.pos += 1
+            if self.pos >= self.end:
+                self.char = ""
+                return
         self.char = next(self.char_iter, "")
 
     def pop_char(self):
@@ -45,7 +52,9 @@ class StreamHandler(SlotDefinedClass):
         copied_iter = self.__copy_iter()
         handler = StreamHandler(itertools.chain([self.char], copied_iter),
                                 line_no=self.line_no,
-                                col_no=self.col_no)
+                                col_no=self.col_no,
+                                end=self.end,
+                                pos=self.pos)
         return handler
 
     def update(self, handler):
@@ -55,3 +64,63 @@ class StreamHandler(SlotDefinedClass):
     def __str__(self):
         return str(self.json())
 
+    def advance(self, n):
+        for i in xrange(n):
+            self.pop_char()
+
+
+def partition_stream_handler(handler, *args):
+    if not args:
+        return []
+
+    first_part = copy.deepcopy(handler)
+
+    if len(args) == 1 or not first_part.char:
+        return [first_part]
+
+    # Create 1st partition of size
+    copied_handler = copy.deepcopy(first_part)
+    size = args[0]
+    first_part.end = size
+
+    # Advance remaining
+    copied_handler.advance(size)
+
+    # copied_handler is now the rest of the stream
+    return [first_part] + partition_stream_handler(copied_handler, *args[1:])
+
+
+# Thanks: http://stackoverflow.com/a/2065624
+def sum_to_n(n, size=None):
+    """Generate the series of +ve integer lists which sum to a +ve integer, n."""
+    from operator import sub
+    mid = xrange(1, n)
+    splits = (d for i in xrange(n) for d in itertools.combinations(mid, i))
+    for s in splits:
+        combo = map(sub, itertools.chain(s, [n]), itertools.chain([0], s))
+        if size is not None:
+            if len(combo) == size:
+                yield combo
+        else:
+            yield combo
+
+
+def partition_list(lst, n):
+    for nums in sum_to_n(len(lst), n):
+        start = 0
+        parts = []
+        for num in nums:
+            end = start + num
+            parts.append(lst[start:end])
+            start = end
+        yield parts
+
+
+def all_partitions(handler, n):
+    """Generate all possible n partitions until one partition is empty."""
+
+
+if __name__ == "__main__":
+    lst = range(10)
+    for parts in partition_list(lst, 3):
+        print(parts)
