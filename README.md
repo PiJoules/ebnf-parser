@@ -1,7 +1,4 @@
 ## TODO
-- Rhs need to check for newlines in grammar.
+- Reimplement using new matching method with iterators.
 
 
-http://pyparsing.wikispaces.com/Examples
-http://pyparsing.wikispaces.com/file/view/ebnftest.py
-http://pyparsing.wikispaces.com/file/view/ebnf.py

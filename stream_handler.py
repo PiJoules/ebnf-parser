@@ -2,40 +2,30 @@
 
 from utils import SlotDefinedClass
 
-import itertools
-import collections
 
-
-class StreamHandler(SlotDefinedClass):
+class StreamHandler(object):
     """Class for handling iterating through a stream of characters."""
-    __types__ = (str, int, int)
-    __slots__ = ("char", "line_no", "col_no", "char_iter", "end", "pos")
 
-    def __init__(self, char_iter, line_no=1, col_no=1, end=None, pos=0):
-        self.char_iter = char_iter
-        self.line_no = line_no
-        self.col_no = col_no
-        self.end = end
-        self.pos = pos
-        self.__pop_without_increment()
+    def __init__(self, char_iter, line_no=1, col_no=1):
+        self.__char_iter = char_iter
+        self.__line_no = line_no
+        self.__col_no = col_no
+        self.__char = ""
+
+    def char(self):
+        return self.__char
 
     def __pop_without_increment(self):
-        if self.end is not None:
-            self.pos += 1
-            if self.pos >= self.end:
-                self.char = ""
-                return
-        self.char = next(self.char_iter, "")
+        self.__char = next(self.__char_iter, "")
 
     def pop_char(self):
         """Get the next character and increment the location."""
-        if self.char:
-            if self.char == "\n":
-                self.line_no += 1
-                self.col_no = 1
-            else:
-                self.col_no += 1
-            self.__pop_without_increment()
+        if self.__char == "\n":
+            self.line_no += 1
+            self.col_no = 1
+        else:
+            self.col_no += 1
+        self.__pop_without_increment()
 
     def __copy_iter(self):
         self.char_iter, copied_iter = itertools.tee(self.char_iter)
@@ -68,44 +58,3 @@ class StreamHandler(SlotDefinedClass):
     def advance(self, n):
         for i in xrange(n):
             self.pop_char()
-
-
-def partition_stream_handler(handler, n):
-    def partitions(handler, *args):
-        if not args:
-            return []
-
-        first_part = copy.deepcopy(handler)
-
-        if len(args) == 1 or not first_part.char:
-            return [first_part]
-
-        # Create 1st partition of size
-        copied_handler = copy.deepcopy(first_part)
-        size = args[0]
-        first_part.end = size
-
-        # Advance remaining
-        copied_handler.advance(size)
-
-        # copied_handler is now the rest of the stream
-        return [first_part] + partitions(copied_handler, *args[1:])
-
-    for nums in sum_to_n(len(lst), n):
-        yield partitions()
-
-
-
-
-
-def partition_list(lst, n):
-    for nums in sum_to_n(len(lst), n):
-        start = 0
-        parts = []
-        for num in nums:
-            end = start + num
-            parts.append(lst[start:end])
-            start = end
-        yield parts
-
-
