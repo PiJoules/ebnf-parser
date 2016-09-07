@@ -40,7 +40,8 @@ class TestIteratorTools(unittest.TestCase):
         self.assertFalse(ExtendedIterator(xrange(0)))
 
     def test_all_iterator_partitions(self):
-        self.assertEqual(36, len(list(all_iterator_partitions(self.__iter, 3))))
+        x = list(all_iterator_partitions(self.__iter, 3))
+        self.assertEqual(36, len(x))
 
 
 if __name__ == "__main__":

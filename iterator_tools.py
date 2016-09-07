@@ -1,6 +1,7 @@
 #-*- coding: utf-8 -*-
 
 import itertools
+import copy
 
 
 # Thanks: http://stackoverflow.com/a/2065624
@@ -24,6 +25,7 @@ class ExtendedIterator(object):
     no longer be used.
     """
     def __init__(self, iterator, start=0, end=None):
+        assert not isinstance(iterator, ExtendedIterator), "The iterator provided to ExtendedIterator must not be an ExtendedIterator."
         self.__iter = iter(iterator)
         self.__end = end
         self.__count = start
@@ -45,6 +47,9 @@ class ExtendedIterator(object):
 
         return item
 
+    def count(self):
+        return self.__count
+
     def peek(self, *args):
         """Args are same as thos passed to islice."""
         items = list(itertools.islice(self.__iter, *args))
@@ -56,26 +61,39 @@ class ExtendedIterator(object):
         if head:  # Could be empty list
             head = head[0]
             if self.__end:
-                return str(self.peek(self.__end))
+                buff = str(self.peek(self.__end))
             else:
-                return "[{}..]".format(head)
+                buff = "[{}..]".format(head)
         else:
-            return "[]"
+            buff = "[]"
+        return "<{} count={} end={} stream={}>".format(
+            type(self).__name__,
+            self.__count,
+            self.__end,
+            buff
+        )
 
     def iterator(self):
-        """Return copy of the iterator independent of this one."""
-        self.__iter, copied = itertools.tee(self.__iter)
-        return copied
+        return self.__iter
 
     def __deepcopy__(self, memo):
+        self.__iter, copied = copy_iterator(self.__iter)
         return ExtendedIterator(
-            self.iterator(),
+            copied,
             start=self.__count,
             end=self.__end
         )
 
     def __nonzero__(self):
         return bool(self.peek(1))
+
+
+def copy_iterator(iterator, n=2):
+    # Avoid invifinte recursion by not having nested ExtendedIterators
+    if isinstance(iterator, ExtendedIterator):
+        iterator = iterator.iterator()
+    results = itertools.tee(iterator, n)
+    return results
 
 
 def consume(iterator, n=None):
@@ -89,7 +107,7 @@ def consume(iterator, n=None):
         next(itertools.islice(iterator, n, n), None)
 
 
-def partition_iterator(iterator, *args):
+def partition_iterator(iterator, *args, **kwargs):
     """
     Partition an iterator into limited iterators.
 
@@ -102,20 +120,22 @@ def partition_iterator(iterator, *args):
     one passed to this, but must replace the one passed to this.
     The second element is the list of partitons.
     """
-    replacement, first_part, remaining = itertools.tee(iterator, 3)
+    start = kwargs.get("start", 0)
+    replacement, first_part, remaining = copy_iterator(iterator, 3)
     if not args:
-        return replacement, [ExtendedIterator(remaining)]
+        remaining = ExtendedIterator(remaining)
+        return replacement, [remaining]
 
     # Set end to first limited iterator
     size = args[0]
     first_part = ExtendedIterator(first_part, end=size)
 
     # Advance remaining
-    remaining = ExtendedIterator(remaining)
+    remaining = ExtendedIterator(remaining, start=start)
     consume(remaining, n=size)
 
     # copied_handler is now the rest of the stream
-    rest = partition_iterator(remaining, *args[1:])[1]
+    rest = partition_iterator(remaining, start=start+size, *args[1:])[1]
     return replacement, [first_part] + rest
 
 
@@ -138,6 +158,9 @@ def all_iterator_partitions(iterator, n):
     the first 4 elements popped off.
     """
     size = n-1
+    if size <= 0:
+        yield [copy.deepcopy(iterator)]
+        return
     while True:
         for nums in sum_to_n(size, n-1):
             iterator, parts = partition_iterator(iterator, *nums)

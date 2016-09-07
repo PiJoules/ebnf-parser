@@ -3,6 +3,7 @@
 
 from utils import char_generator
 from stream_handler import StreamHandler
+from iterator_tools import ExtendedIterator
 
 import unittest
 import copy
@@ -13,23 +14,21 @@ TEST_GRAMMAR = "ebnf_grammar.txt"
 
 class TestStreamHandler(unittest.TestCase):
     def setUp(self):
-        self.handler = StreamHandler(char_generator(TEST_GRAMMAR))
+        self.handler = StreamHandler(ExtendedIterator(char_generator(TEST_GRAMMAR)))
 
     def test_iteration(self):
         """Test normal iteration through the handler."""
         gen = char_generator(TEST_GRAMMAR)
-        c = next(gen, None)
 
-        while c:
-            self.assertEqual(c, self.handler.char)
+        for c in gen:
             self.handler.pop_char()
-            c = next(gen, None)
+            self.assertEqual(c, self.handler.char())
 
-        self.assertEqual(self.handler.char, "")
+        self.handler.pop_char()
+        self.assertEqual(self.handler.char(), "")
 
     def __advance_stream(self, handler, n=10):
-        for i in xrange(n):
-            handler.pop_char()
+        handler.advance(n)
 
     def test_copy(self):
         """Test that a copied handler has a completely different stream."""
@@ -39,9 +38,14 @@ class TestStreamHandler(unittest.TestCase):
         self.__advance_stream(copied_handler)
 
         for i in xrange(10):
-            self.assertEqual(self.handler.char, copied_handler.char)
+            self.assertEqual(self.handler.char(), copied_handler.char())
             self.handler.pop_char()
             copied_handler.pop_char()
+
+    def test_no_partitions(self):
+        handler = StreamHandler(ExtendedIterator(iter("")))
+        parts = list(handler.partitions(3))
+        self.assertFalse(parts)
 
 
 if __name__ == "__main__":
