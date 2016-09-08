@@ -101,7 +101,7 @@ class StreamHandler(object):
                     end += size
                     parts[-1].char_iter().set_end(end)
                     part = copy.deepcopy(parts[-1])
-                    part.char_iter().set_end(None)
+                    part.char_iter().set_end(self.__char_iter.end())
                     part.advance(size)
                     parts.append(part)
                 if not all(parts):

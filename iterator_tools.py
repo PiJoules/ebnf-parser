@@ -52,6 +52,9 @@ class ExtendedIterator(object):
     def count(self):
         return self.__count
 
+    def end(self):
+        return self.__end
+
     def peek(self, n):
         """Args are same as thos passed to islice."""
         if self.__end:

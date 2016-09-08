@@ -111,6 +111,7 @@ def concatenation(*args):
     class Concatentation(ProductionRule):
         def parse(self):
             productions = []
+            print("rules for this Concatentation:", args)
 
             last_size = -1
             num_partitions = len(args)
@@ -140,7 +141,9 @@ def concatenation(*args):
                         last_good_stream = parts[-1]
                         productions = test_productions
                         last_size = size
+                    print("productions:", map(str, productions))
                 elif err_count >= num_partitions:
+                    print("All failed")
                     # All failed
                     break
 
@@ -172,6 +175,7 @@ class Identifier(ProductionRule):
         alt = alternation(Letter, Digit, match_string("_"))
         rep = repetition(alt)
         self._set_productions([concatenation(Letter, rep)(self.stream_handler())])
+        print("Identifier:", self)
 
 
 def test_rule(test, rule_cls):
@@ -181,23 +185,22 @@ def test_rule(test, rule_cls):
 
 class Something(ProductionRule):
     def parse(self):
-        self._set_productions([
-            concatenation(
+        overall = concatenation(
                 #concatenation(match_string("A"), repetition(match_string("B"))),
                 #concatenation(match_string("C"))
                 Identifier,
                 match_string("_")
             )(self.stream_handler())
-        ])
+        self._set_productions([overall])
 
 
 def main():
-    test_rule("A", Letter)
-    test_rule("9", Digit)
-    test_rule("literal", match_string("literal"))
-    test_rule("AAA_9__9", Identifier)
-    test_rule("'something'", Terminal)
-    test_rule("ABBBBBBBBBC_", Something)
+    #test_rule("A", Letter)
+    #test_rule("9", Digit)
+    #test_rule("literal", match_string("literal"))
+    #test_rule("AAA_9__9", Identifier)
+    #test_rule("'something'", Terminal)
+    test_rule("ABBBC_", Something)
 
     return 0
 
