@@ -84,35 +84,11 @@ class ProductionRule(object):
     def _set_productions(self, productions):
         self.__productions = productions
 
-    def __parse_all(self):
-        """
-        Attempt to prevent inifinite recursion and find the first match of
-        a rule by testing each production against different sized partitions.
-        """
-        raise NotImplementedError
-
     def _raise_syntax_error(self, **kwargs):
         raise RuleSyntaxError.from_stream_handler(
             self.__handler,
             **kwargs
         )
-
-    #@classmethod
-    #def try_to_create(cls, stream_handler):
-    #    """
-    #    Create a copy of the handler, and try to make this construction
-    #    off the copy. Returns None if unable to create.
-    #    Updates the given stream handler if successfully able to create
-    #    the rule.
-    #    """
-    #    try:
-    #        copied_handler = copy.deepcopy(stream_handler)
-    #        inst = cls(copied_handler)
-    #    except RuleSyntaxError:
-    #        return None
-
-    #    stream_handler.update(copied_handler)
-    #    return inst
 
     def __str__(self):
         return "".join(map(str, self.__productions))
