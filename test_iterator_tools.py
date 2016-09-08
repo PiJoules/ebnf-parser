@@ -29,6 +29,14 @@ class TestIteratorTools(unittest.TestCase):
         for i, elem in enumerate(self.__iter):
             self.assertEqual(elem, elems[i])
 
+    def test_peek_empty_stream(self):
+        iterator = ExtendedIterator(xrange(0))
+        self.assertEqual(iterator.peek(1), [])
+
+        iterator = ExtendedIterator(xrange(1))
+        next(iterator)
+        self.assertEqual(iterator.peek(1), [])
+
     def test_deep_copy(self):
         copied = copy.deepcopy(self.__iter)
         self.assertNotEqual(id(self.__iter), id(copied))

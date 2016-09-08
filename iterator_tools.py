@@ -40,7 +40,9 @@ class ExtendedIterator(object):
         if self.__end is not None:
             if self.__count >= self.__end:
                 raise StopIteration
-        item = next(self.__iter)  # Automatically raises StopIteration
+
+        # Automatically raises StopIteration
+        item = next(self.__iter)
 
         # Increment on successful retrieval
         self.__count += 1
@@ -50,9 +52,11 @@ class ExtendedIterator(object):
     def count(self):
         return self.__count
 
-    def peek(self, *args):
+    def peek(self, n):
         """Args are same as thos passed to islice."""
-        items = list(itertools.islice(self.__iter, *args))
+        if self.__end:
+            n = min(n, self.__end - self.__count)
+        items = list(itertools.islice(self.__iter, n))
         self.__iter = itertools.chain(items, self.__iter)
         return items
 
@@ -61,7 +65,7 @@ class ExtendedIterator(object):
         if head:  # Could be empty list
             head = head[0]
             if self.__end:
-                buff = str(self.peek(self.__end))
+                buff = str(self.peek(self.__end - self.__count))
             else:
                 buff = "[{}..]".format(head)
         else:

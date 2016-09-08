@@ -41,12 +41,27 @@ class Identifier(ProductionRule):
 
         # letter, { letter | digit | _ }, _
         # Concatentation
-        for parts in self.stream_handler().partitions(3):
-            try:
-                print("first part:", parts[0])
-                letter = Letter(parts[0])
+        partitions = 3
+        last_good_stream = None
+        for parts in self.stream_handler().partitions(partitions):
+            err_count = 0
+            test_productions = []
 
-                print("second part:", parts[1])
+            # letter
+            try:
+                prod = Letter(parts[0])
+
+                # Whole stream must be finished
+                if parts[0]:
+                    err_count += 1
+            except RuleSyntaxError:
+                err_count += 1
+            else:
+                test_productions.append(prod)
+
+
+            # { letter | digit | "_" }
+            try:
 
                 # repetition
                 repetition = []
@@ -72,27 +87,37 @@ class Identifier(ProductionRule):
                         repetition.append(next_rule)
                         parts[1].update_from_handler(copied_handler)
 
-
-                print("third part:", parts[2])
-                underscore = match_string("_")(parts[2])
-
+                # Whole stream must be finished
+                if parts[1]:
+                    err_count += 1
             except RuleSyntaxError:
-                pass
+                err_count += 1
             else:
-                productions.append(letter)
+                test_productions += repetition
 
-                # repetition
-                productions += repetition
 
-                productions.append(underscore)
+            # "_"
+            try:
+                prod = match_string("_")(parts[2])
 
-                print("final productions:", map(str, productions))
+                # Whole stream must be finished
+                if parts[1]:
+                    err_count += 1
+            except RuleSyntaxError:
+                err_count += 1
+            else:
+                test_productions.append(prod)
 
-                self.stream_handler().update_from_handler(parts[-1])
-                print("rest:", self.stream_handler())
+
+            if not err_count:
+                last_good_stream = parts[-1]
+                productions = test_productions
+            elif err_count >= partitions:
+                # All failed
                 break
-        else:
-            self._raise_syntax_error(expected="letter")
+
+        if last_good_stream is not None:
+            self.stream_handler().update_from_handler(last_good_stream)
 
         self._set_productions(productions)
 
