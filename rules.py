@@ -106,51 +106,134 @@ def repetition(rule):
     return Repetition
 
 
-def concatenation(*args):
+def count_diff(h1, h2):
+    return h1.char_iter().count() - h2.char_iter().count()
+
+
+def concatenation(*args, **kwargs):
     """Decorator for Concatentation class."""
+    streams = kwargs.get("streams", [])
+
     class Concatentation(ProductionRule):
         def parse(self):
+            #productions = []
+            #copied = copy.deepcopy(self.stream_handler())
+            #if len(args) == 1:
+            #    # Last one; must pass
+            #    productions.append(args[0](copied))
+            #    self.stream_handler().update_from_handler(copied)
+            #elif not args:
+            #    self._raise_syntax_error(message="No rule provided.")
+            #else:
+            #    pass
+
             productions = []
-            print("rules for this Concatentation:", args)
+            #streams = [copy.deepcopy(self.stream_handler())]
+            streams = []
+            ref_streams = []
+            rules = list(reversed(args))
+            valid_rules = []
+            last_stream = copy.deepcopy(self.stream_handler())
 
-            last_size = -1
-            num_partitions = len(args)
-            last_good_stream = None
-            for parts in self.stream_handler().partitions(num_partitions):
-                err_count = 0
-                test_productions = []
+            while rules:
+                print("rules:", rules)
+                print("streams:", map(str, streams))
+                print("prods:", map(str, productions))
 
-                # Apply partitions to each rule
-                for i in xrange(num_partitions):
-                    try:
-                        rule = args[i](parts[i])
+                rule = rules.pop()
+                #copied = copy.deepcopy(streams[-1])
+                copied = copy.deepcopy(last_stream)
+                try:
+                    prod = rule(copied)
+                except RuleSyntaxError:
+                    if valid_rules:
+                        productions.pop()
 
-                        # Whole stream must be finished
-                        if parts[i]:
-                            err_count += 1
-                    except RuleSyntaxError:
-                        err_count += 1
+                        streams[-1].char_iter().set_end(streams[-1].char_iter().end() - 1)
+                        last_stream = streams.pop()
+
+                        rules.append(rule)
+                        rules.append(valid_rules.pop())
                     else:
-                        test_productions.append(rule)
+                        print("Failed")
+                        self._raise_syntax_error(expected=rule.__name__)
+                else:
+                    # Success
+                    productions.append(prod)
 
-                # Record all valid rules and exit when not able to apply any
-                # partitions on any rule
-                if not err_count:
-                    size = len("".join(map(str, test_productions)))
-                    if size > last_size:
-                        last_good_stream = parts[-1]
-                        productions = test_productions
-                        last_size = size
-                    print("productions:", map(str, productions))
-                elif err_count >= num_partitions:
-                    print("All failed")
-                    # All failed
-                    break
+                    ref_streams.append(copy.deepcopy(last_stream))
 
-            if last_good_stream is None:
-                self._raise_syntax_error(expected="concatenation of {}".format(args))
+                    #n = count_diff(copied, streams[-1])
+                    n = count_diff(copied, last_stream)
+                    #streams[-1].char_iter().set_end(streams[-1].char_iter().count() + n)
+                    last_stream.char_iter().set_end(last_stream.char_iter().count() + n)
+                    #streams.append(copied)
+                    streams.append(last_stream)
 
-            self.stream_handler().update_from_handler(last_good_stream)
+                    valid_rules.append(rule)
+
+                    last_stream = copied
+
+            self.stream_handler().update_from_handler(last_stream)
+            print("prods:", map(str, productions))
+
+            #copied = copy.deepcopy(self.stream_handler())
+            #prod = args[0](copied)
+            #n = count_diff(copied, self.stream_handler())
+            #streams.append(self.stream_handler().up_to(n))
+            #productions.append(prod)
+
+            #i = 1
+            #while i < len(args):
+            #    backup = copy.deepcopy(copied)
+            #    try:
+            #        prod = args[i](backup)
+            #    except RuleSyntaxError:
+            #        # Backtrack to previous prod, limiting the stream
+            #    else:
+            #        productions.append(prod)
+            #        streams.append(copied.up_to(count_diff(backup, copied)))
+            #        copied.update_from_handler(backup)
+
+
+            #    i += 1
+
+            #last_size = -1
+            #num_partitions = len(args)
+            #last_good_stream = None
+            #for parts in self.stream_handler().partitions(num_partitions):
+            #    err_count = 0
+            #    test_productions = []
+
+            #    # Apply partitions to each rule
+            #    for i in xrange(num_partitions):
+            #        try:
+            #            rule = args[i](parts[i])
+
+            #            # Whole stream must be finished
+            #            if parts[i]:
+            #                err_count += 1
+            #        except RuleSyntaxError:
+            #            err_count += 1
+            #        else:
+            #            test_productions.append(rule)
+
+            #    # Record all valid rules and exit when not able to apply any
+            #    # partitions on any rule
+            #    if not err_count:
+            #        size = len("".join(map(str, test_productions)))
+            #        if size > last_size:
+            #            last_good_stream = parts[-1]
+            #            productions = test_productions
+            #            last_size = size
+            #    elif err_count >= num_partitions:
+            #        # All failed
+            #        break
+
+            #if last_good_stream is None:
+            #    self._raise_syntax_error(expected="concatenation of {}".format(args))
+
+            #self.stream_handler().update_from_handler(last_good_stream)
             self._set_productions(productions)
 
     return Concatentation
@@ -175,7 +258,6 @@ class Identifier(ProductionRule):
         alt = alternation(Letter, Digit, match_string("_"))
         rep = repetition(alt)
         self._set_productions([concatenation(Letter, rep)(self.stream_handler())])
-        print("Identifier:", self)
 
 
 def test_rule(test, rule_cls):
@@ -199,8 +281,8 @@ def main():
     #test_rule("9", Digit)
     #test_rule("literal", match_string("literal"))
     #test_rule("AAA_9__9", Identifier)
-    #test_rule("'something'", Terminal)
-    test_rule("ABBBC_", Something)
+    test_rule("'something'", Terminal)
+    #test_rule("ABBBC_", Something)
 
     return 0
 

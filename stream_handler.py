@@ -10,7 +10,7 @@ import copy
 class StreamHandler(object):
     """Class for handling iterating through a stream of characters."""
 
-    def __init__(self, char_iter, line_no=0, col_no=0, starting_char=""):
+    def __init__(self, char_iter, line_no=1, col_no=1, starting_char=""):
         assert isinstance(char_iter, ExtendedIterator), "The iterator provided to StreamHandler must be an ExtendedIterator."
         self.__char_iter = char_iter
         self.__line_no = line_no
@@ -40,9 +40,6 @@ class StreamHandler(object):
             self.__col_no = 1
         elif char:
             self.__col_no += 1
-        else:
-            self.__line_no = 1
-            self.__col_no = 1
         self.__pop_without_increment()
 
     def advance(self, n):
@@ -109,6 +106,23 @@ class StreamHandler(object):
                 yield parts
             n += 1
 
+    def pos(self):
+        return self.__char_iter.count()
+
     def peek(self, n=1):
         return self.__char_iter.peek(n)
+
+    def up_to(self, i):
+        copied = copy.deepcopy(self)
+        new_end = copied.char_iter().count() + i
+        if new_end < copied.char_iter().end():
+            copied.char_iter().set_end(new_end)
+        return copied
+
+    def split_at(self, i):
+        copied = copy.deepcopy(self)
+        second_copy = copy.deepcopy(self)
+        copied.char_iter().set_end(i)
+        second_copy.advance(i)
+        return copied, second_copy
 
