@@ -78,7 +78,7 @@ def alternation(*args):
                     self.stream_handler().update_from_handler(copied_handler)
                     break
             else:
-                self._raise_syntax_error(expected=str(self.__rules))
+                self._raise_syntax_error(expected=str(map(str, args)))
 
             self._set_productions([next_rule])
     return Alternation
@@ -91,8 +91,8 @@ def repetition(rule):
             productions = []
 
             # Keep testing until run into error
-            copied = copy.deepcopy(self.stream_handler())
-            while copied:
+            while True:
+                copied = copy.deepcopy(self.stream_handler())
                 try:
                     # alternation
                     next_rule = rule(copied)
@@ -100,154 +100,88 @@ def repetition(rule):
                     break
                 else:
                     productions.append(next_rule)
+                    self.stream_handler().update_from_handler(copied)
 
-            self.stream_handler().advance(len(productions))
             self._set_productions(productions)
     return Repetition
+
+
+def optional(rule):
+    class Optional(ProductionRule):
+        def parse(self):
+            productions = []
+            copied_handler = copy.deepcopy(self.stream_handler())
+            try:
+                next_rule = rule(copied_handler)
+            except RuleSyntaxError:
+                pass
+            else:
+                self.stream_handler().update_from_handler(copied_handler)
+                productions.append(next_rule)
+            self._set_productions(productions)
+
+    return Optional
 
 
 def count_diff(h1, h2):
     return h1.char_iter().count() - h2.char_iter().count()
 
 
-def concatenation(*args, **kwargs):
+def concatenation(*args):
     """Decorator for Concatentation class."""
-    streams = kwargs.get("streams", [])
-
     class Concatentation(ProductionRule):
         def parse(self):
-            #productions = []
-            #copied = copy.deepcopy(self.stream_handler())
-            #if len(args) == 1:
-            #    # Last one; must pass
-            #    productions.append(args[0](copied))
-            #    self.stream_handler().update_from_handler(copied)
-            #elif not args:
-            #    self._raise_syntax_error(message="No rule provided.")
-            #else:
-            #    pass
-
             productions = []
-            #streams = [copy.deepcopy(self.stream_handler())]
-            streams = []
-            ref_streams = []
-            rules = list(reversed(args))
-            valid_rules = []
-            last_stream = copy.deepcopy(self.stream_handler())
 
-            while rules:
-                print("rules:", rules)
-                print("streams:", map(str, streams))
-                print("prods:", map(str, productions))
+            for rule_cls in args:
+                prod = rule_cls(self.stream_handler())
+                productions.append(prod)
 
-                rule = rules.pop()
-                #copied = copy.deepcopy(streams[-1])
-                copied = copy.deepcopy(last_stream)
-                try:
-                    prod = rule(copied)
-                except RuleSyntaxError:
-                    if valid_rules:
-                        productions.pop()
-
-                        streams[-1].char_iter().set_end(streams[-1].char_iter().end() - 1)
-                        last_stream = streams.pop()
-
-                        rules.append(rule)
-                        rules.append(valid_rules.pop())
-                    else:
-                        print("Failed")
-                        self._raise_syntax_error(expected=rule.__name__)
-                else:
-                    # Success
-                    productions.append(prod)
-
-                    ref_streams.append(copy.deepcopy(last_stream))
-
-                    #n = count_diff(copied, streams[-1])
-                    n = count_diff(copied, last_stream)
-                    #streams[-1].char_iter().set_end(streams[-1].char_iter().count() + n)
-                    last_stream.char_iter().set_end(last_stream.char_iter().count() + n)
-                    #streams.append(copied)
-                    streams.append(last_stream)
-
-                    valid_rules.append(rule)
-
-                    last_stream = copied
-
-            self.stream_handler().update_from_handler(last_stream)
-            print("prods:", map(str, productions))
-
-            #copied = copy.deepcopy(self.stream_handler())
-            #prod = args[0](copied)
-            #n = count_diff(copied, self.stream_handler())
-            #streams.append(self.stream_handler().up_to(n))
-            #productions.append(prod)
-
-            #i = 1
-            #while i < len(args):
-            #    backup = copy.deepcopy(copied)
-            #    try:
-            #        prod = args[i](backup)
-            #    except RuleSyntaxError:
-            #        # Backtrack to previous prod, limiting the stream
-            #    else:
-            #        productions.append(prod)
-            #        streams.append(copied.up_to(count_diff(backup, copied)))
-            #        copied.update_from_handler(backup)
-
-
-            #    i += 1
-
-            #last_size = -1
-            #num_partitions = len(args)
-            #last_good_stream = None
-            #for parts in self.stream_handler().partitions(num_partitions):
-            #    err_count = 0
-            #    test_productions = []
-
-            #    # Apply partitions to each rule
-            #    for i in xrange(num_partitions):
-            #        try:
-            #            rule = args[i](parts[i])
-
-            #            # Whole stream must be finished
-            #            if parts[i]:
-            #                err_count += 1
-            #        except RuleSyntaxError:
-            #            err_count += 1
-            #        else:
-            #            test_productions.append(rule)
-
-            #    # Record all valid rules and exit when not able to apply any
-            #    # partitions on any rule
-            #    if not err_count:
-            #        size = len("".join(map(str, test_productions)))
-            #        if size > last_size:
-            #            last_good_stream = parts[-1]
-            #            productions = test_productions
-            #            last_size = size
-            #    elif err_count >= num_partitions:
-            #        # All failed
-            #        break
-
-            #if last_good_stream is None:
-            #    self._raise_syntax_error(expected="concatenation of {}".format(args))
-
-            #self.stream_handler().update_from_handler(last_good_stream)
             self._set_productions(productions)
 
     return Concatentation
 
 
+def exclusion(base, *args):
+    class Exclusion(ProductionRule):
+        def parse(self):
+            productions = []
+
+            copied = copy.deepcopy(self.stream_handler())
+            prod = base(copied)
+            for excluded_rule in args:
+                try:
+                    excluded_rule(copy.deepcopy(self.stream_handler()))
+                except RuleSyntaxError:
+                    pass
+                else:
+                    self._raise_syntax_error(expected="{} excluding {}".format(base, excluded_rule))
+            productions.append(prod)
+            self.stream_handler().update_from_handler(copied)
+
+            self._set_productions(productions)
+
+    return Exclusion
+
+
 class Terminal(ProductionRule):
     def parse(self):
         # "'", character, { character }, "'"
+        # '"', character, { character }, '"'
         self._set_productions([
-            concatenation(
-                match_string("'"),
-                AnyCharacter,
-                repetition(AnyCharacter),
-                match_string("'")
+            alternation(
+                concatenation(
+                    match_string("'"),
+                    AnyCharacter,
+                    repetition(exclusion(AnyCharacter, match_string("'"))),
+                    match_string("'")
+                ),
+                concatenation(
+                    match_string('"'),
+                    AnyCharacter,
+                    repetition(exclusion(AnyCharacter, match_string('"'))),
+                    match_string('"')
+                )
             )(self.stream_handler())
         ])
 
@@ -260,29 +194,191 @@ class Identifier(ProductionRule):
         self._set_productions([concatenation(Letter, rep)(self.stream_handler())])
 
 
-def test_rule(test, rule_cls):
-    x = str(rule_cls.from_str(test))
-    assert x == test, "Expected {}, found {}.".format(test, x)
-
-
-class Something(ProductionRule):
+class SingleWhitespace(ProductionRule):
     def parse(self):
-        overall = concatenation(
-                #concatenation(match_string("A"), repetition(match_string("B"))),
-                #concatenation(match_string("C"))
-                Identifier,
-                match_string("_")
+        char = self._pop_char()
+        if not char.isspace():
+            self._raise_syntax_error(expected="alphabetic character")
+        self._set_productions(char)
+
+
+class Whitespace(repetition(SingleWhitespace)):
+    pass
+
+
+class Optional(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            concatenation(
+                match_string("["),
+                Whitespace,
+                Productions,
+                Whitespace,
+                match_string("]")
             )(self.stream_handler())
-        self._set_productions([overall])
+        ])
+
+
+class Repetition(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            concatenation(
+                match_string("{"),
+                Whitespace,
+                Productions,
+                Whitespace,
+                match_string("}"),
+            )(self.stream_handler())
+        ])
+
+
+class Grouping(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            concatenation(
+                match_string("("),
+                Whitespace,
+                Productions,
+                Whitespace,
+                match_string(")")
+            )(self.stream_handler())
+        ])
+
+
+class SingleRule(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            alternation(
+                Identifier,
+                Terminal,
+                Optional,
+                Repetition,
+                Grouping,
+            )(self.stream_handler())
+        ])
+
+
+class Concatentation(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            alternation(
+                concatenation(
+                    SingleRule,
+                    Whitespace,
+                    match_string(","),
+                    Whitespace,
+                    Concatentation
+                ),
+                SingleRule
+            )(self.stream_handler())
+        ])
+
+
+class Alternation(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            alternation(
+                concatenation(
+                    Concatentation,
+                    Whitespace,
+                    match_string("|"),
+                    Whitespace,
+                    Alternation
+                ),
+                Concatentation
+            )(self.stream_handler())
+        ])
+
+
+class Productions(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            Alternation(self.stream_handler())
+        ])
+
+
+class Rule(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            concatenation(
+                Identifier,
+                Whitespace,
+                match_string("="),
+                Whitespace,
+                Productions,
+                Whitespace,
+                match_string(";"),
+                Whitespace
+            )(self.stream_handler())
+        ])
+
+
+class Grammar(ProductionRule):
+    def parse(self):
+        self._set_productions([
+            repetition(Rule)(self.stream_handler())
+        ])
+
+
+def test_rule(test, rule_cls):
+    test = test.strip()
+    x = str(rule_cls.from_str(test))
+    assert x == test, "Expected {}, found '{}'.".format(test, x)
 
 
 def main():
-    #test_rule("A", Letter)
-    #test_rule("9", Digit)
-    #test_rule("literal", match_string("literal"))
-    #test_rule("AAA_9__9", Identifier)
+    test_rule("A", Letter)
+    test_rule("9", Digit)
+    test_rule("[", Symbol)
+    test_rule("literal", match_string("literal"))
+    test_rule("AAA_9__9", Identifier)
     test_rule("'something'", Terminal)
-    #test_rule("ABBBC_", Something)
+    test_rule('"something"', Terminal)
+    test_rule("   ", Whitespace)
+    test_rule("'something' name", concatenation(Terminal, Whitespace, Identifier))
+    test_rule("", optional(AnyCharacter))
+    test_rule("2", optional(AnyCharacter))
+
+    test_rule('"A" | "B"', concatenation(
+        Terminal, Whitespace, match_string("|"), Whitespace, Terminal))
+
+    test_rule("Identifier = 'something';", Rule)
+    test_rule("Identifier = 'something' | something_else | ['ayy'];", Rule)
+    test_rule("Identifier = ('thing1' | 'thing2') | 'something' | something_else | ['ayy'] | { [ident ] };", Rule)
+    test_rule("Identifier = ('thing1' | 'thing2'), else | 'something' | something_else | ['ayy'] | { [ident ] };", Rule)
+
+    test_rule('letter = "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z" | "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z" ;', Grammar)
+
+    test_rule("""
+letter = "A" | "B" | "C" | "D" | "E" | "F" | "G"
+       | "H" | "I" | "J" | "K" | "L" | "M" | "N"
+       | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
+       | "V" | "W" | "X" | "Y" | "Z" | "a" | "b"
+       | "c" | "d" | "e" | "f" | "g" | "h" | "i"
+       | "j" | "k" | "l" | "m" | "n" | "o" | "p"
+       | "q" | "r" | "s" | "t" | "u" | "v" | "w"
+       | "x" | "y" | "z" ;
+digit = "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" ;
+symbol = "[" | "]" | "{" | "}" | "(" | ")" | "<" | ">"
+       | "'" | '"' | "=" | "|" | "." | "," | ";" ;
+character = letter | digit | symbol | "_" ;
+
+identifier = letter , { letter | digit | "_" } ;
+terminal = "'" , character , { character } , "'"
+         | '"' , character , { character } , '"' ;
+
+lhs = identifier ;
+rhs = identifier
+     | terminal
+     | "[" , rhs , "]"
+     | "{" , rhs , "}"
+     | "(" ,rhs , ")"
+     | rhs , "|" , rhs
+     | rhs , "," , rhs ;
+
+rule = lhs , "=" , rhs , ";" ;
+grammar = { rule } ;
+              """, Grammar)
 
     return 0
 
