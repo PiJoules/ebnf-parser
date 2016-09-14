@@ -8,6 +8,9 @@ from production_rule import *
 import string
 import copy
 import json
+import sys
+
+sys.setrecursionlimit(1000000)
 
 
 class Letter(ProductionRule):
@@ -16,7 +19,7 @@ class Letter(ProductionRule):
         char = self.pop_char()
         if (not char) or (char not in string.ascii_letters):
             self._raise_syntax_error(expected="alphabetic character")
-        self._set_productions(char)
+        return char
 
 
 class Symbol(ProductionRule):
@@ -27,7 +30,7 @@ class Symbol(ProductionRule):
         char = self.pop_char()
         if (not char) or (char not in self.SYMBOLS):
             self._raise_syntax_error(expected="one of the characters '{}'".format(self.SYMBOLS))
-        self._set_productions(char)
+        return char
 
 
 class Digit(ProductionRule):
@@ -35,14 +38,14 @@ class Digit(ProductionRule):
         char = self.pop_char()
         if not char.isdigit():
             self._raise_syntax_error(expected="alphabetic character")
-        self._set_productions(char)
+        return char
 
 
 class Terminal(ProductionRule):
     def parse(self):
         # "'", { character }, "'"
         # '"', { character }, '"'
-        self._set_productions([
+        return [
             alternation(
                 concatenation(
                     terminal_string("'"),
@@ -55,7 +58,7 @@ class Terminal(ProductionRule):
                     terminal_string('"')
                 )
             )(self.stream_handler())
-        ])
+        ]
 
 
 class Identifier(ProductionRule):
@@ -63,7 +66,7 @@ class Identifier(ProductionRule):
         # Letter, { Letter, Digit, "_" }
         alt = alternation(Letter, Digit, terminal_string("_"))
         rep = repetition(alt)
-        self._set_productions([concatenation(Letter, rep)(self.stream_handler())])
+        return [concatenation(Letter, rep)(self.stream_handler())]
 
     def json(self):
         return {
@@ -73,7 +76,7 @@ class Identifier(ProductionRule):
 
 class Optional(ProductionRule):
     def parse(self):
-        self._set_productions([
+        return [
             concatenation(
                 terminal_string("["),
                 Whitespace,
@@ -81,12 +84,12 @@ class Optional(ProductionRule):
                 Whitespace,
                 terminal_string("]")
             )(self.stream_handler())
-        ])
+        ]
 
 
 class Repetition(ProductionRule):
     def parse(self):
-        self._set_productions([
+        return [
             concatenation(
                 terminal_string("{"),
                 Whitespace,
@@ -94,12 +97,12 @@ class Repetition(ProductionRule):
                 Whitespace,
                 terminal_string("}"),
             )(self.stream_handler())
-        ])
+        ]
 
 
 class Grouping(ProductionRule):
     def parse(self):
-        self._set_productions([
+        return [
             concatenation(
                 terminal_string("("),
                 Whitespace,
@@ -107,12 +110,12 @@ class Grouping(ProductionRule):
                 Whitespace,
                 terminal_string(")")
             )(self.stream_handler())
-        ])
+        ]
 
 
 class SingleRule(ProductionRule):
     def parse(self):
-        self._set_productions([
+        return [
             alternation(
                 Identifier,
                 Terminal,
@@ -120,12 +123,12 @@ class SingleRule(ProductionRule):
                 Repetition,
                 Grouping,
             )(self.stream_handler())
-        ])
+        ]
 
 
 class Concatentation(ProductionRule):
     def parse(self):
-        self._set_productions([
+        return [
             alternation(
                 concatenation(
                     SingleRule,
@@ -136,12 +139,12 @@ class Concatentation(ProductionRule):
                 ),
                 SingleRule
             )(self.stream_handler())
-        ])
+        ]
 
 
 class Alternation(ProductionRule):
     def parse(self):
-        self._set_productions([
+        return [
             alternation(
                 concatenation(
                     Concatentation,
@@ -152,19 +155,18 @@ class Alternation(ProductionRule):
                 ),
                 Concatentation
             )(self.stream_handler())
-        ])
+        ]
 
 
 class Productions(ProductionRule):
     def parse(self):
-        self._set_productions([
-            Alternation(self.stream_handler())
-        ])
+        x = [Alternation(self.stream_handler())]
+        return x
 
 
 class Rule(ProductionRule):
     def parse(self):
-        self._set_productions([
+        return [
             concatenation(
                 Identifier,
                 Whitespace,
@@ -175,14 +177,12 @@ class Rule(ProductionRule):
                 terminal_string(";"),
                 Whitespace
             )(self.stream_handler())
-        ])
+        ]
 
 
 class Grammar(ProductionRule):
     def parse(self):
-        self._set_productions([
-            repetition(Rule)(self.stream_handler())
-        ])
+        return [repetition(Rule)(self.stream_handler())]
 
 
 def test_rule(test, rule_cls):

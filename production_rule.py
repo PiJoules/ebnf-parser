@@ -52,8 +52,7 @@ class RuleSyntaxError(Exception):
 class ProductionRule(object):
     def __init__(self, stream_handler):
         self.__handler = stream_handler
-        self.__productions = []
-        self.parse()
+        self.__apply_stream()
 
     @classmethod
     def from_whole_stream(cls, stream):
@@ -125,7 +124,7 @@ def terminal_string(expected):
                         expected=expected,
                         found=found
                     )
-            self._set_productions(acc)
+            return acc
 
     return TerminalString
 
@@ -142,7 +141,7 @@ def optional(rule):
             else:
                 self.stream_handler().update_from_handler(copied_handler)
                 productions.append(next_rule)
-            self._set_productions(productions)
+            return productions
 
     return Optional
 
@@ -164,7 +163,7 @@ def alternation(*args):
             else:
                 self._raise_syntax_error(expected=str(map(str, args)))
 
-            self._set_productions([next_rule])
+            return [next_rule]
 
     return Alternation
 
@@ -187,7 +186,8 @@ def repetition(rule):
                     productions.append(next_rule)
                     self.stream_handler().update_from_handler(copied)
 
-            self._set_productions(productions)
+            return productions
+
     return Repetition
 
 
@@ -201,7 +201,7 @@ def concatenation(*args):
                 prod = rule_cls(self.stream_handler())
                 productions.append(prod)
 
-            self._set_productions(productions)
+            return productions
 
     return Concatentation
 
@@ -223,7 +223,7 @@ def exclusion(base, *args):
             productions.append(prod)
             self.stream_handler().update_from_handler(copied)
 
-            self._set_productions(productions)
+            return productions
 
     return Exclusion
 
@@ -233,7 +233,7 @@ class SingleWhitespace(ProductionRule):
         char = self.pop_char()
         if not char.isspace():
             self._raise_syntax_error(expected="alphabetic character")
-        self._set_productions(char)
+        return char
 
 
 class Whitespace(repetition(SingleWhitespace)):
@@ -245,6 +245,6 @@ class AnyCharacter(ProductionRule):
         char = self.pop_char()
         if not char:
             self._raise_syntax_error(expected="a character")
-        self._set_productions(char)
+        return char
 
 
