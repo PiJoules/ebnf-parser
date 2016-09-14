@@ -3,34 +3,17 @@
 
 from __future__ import print_function
 
-from production_rule import ProductionRule, RuleSyntaxError
+from production_rule import *
 
 import string
 import copy
-
-
-def match_string(expected):
-    class TerminalString(ProductionRule):
-        def parse(self):
-            copied_handler = copy.deepcopy(self.stream_handler())
-            acc = ""
-            for c in expected:
-                found = self._pop_char()
-                acc += found
-                if found != c:
-                    raise RuleSyntaxError.from_stream_handler(
-                        copied_handler,
-                        expected=expected,
-                        found=found
-                    )
-            self._set_productions(acc)
-    return TerminalString
+import json
 
 
 class Letter(ProductionRule):
     def parse(self):
         # Get char from buffer
-        char = self._pop_char()
+        char = self.pop_char()
         if (not char) or (char not in string.ascii_letters):
             self._raise_syntax_error(expected="alphabetic character")
         self._set_productions(char)
@@ -41,7 +24,7 @@ class Symbol(ProductionRule):
 
     def parse(self):
         # Get char from buffer
-        char = self._pop_char()
+        char = self.pop_char()
         if (not char) or (char not in self.SYMBOLS):
             self._raise_syntax_error(expected="one of the characters '{}'".format(self.SYMBOLS))
         self._set_productions(char)
@@ -49,138 +32,27 @@ class Symbol(ProductionRule):
 
 class Digit(ProductionRule):
     def parse(self):
-        char = self._pop_char()
+        char = self.pop_char()
         if not char.isdigit():
             self._raise_syntax_error(expected="alphabetic character")
         self._set_productions(char)
 
 
-class AnyCharacter(ProductionRule):
-    def parse(self):
-        char = self._pop_char()
-        if not char:
-            self._raise_syntax_error(expected="a character")
-        self._set_productions(char)
-
-
-def alternation(*args):
-    """Decorator for Alternation class."""
-    class Alternation(ProductionRule):
-        def parse(self):
-            next_rule = None
-            for rule_cls in args:
-                copied_handler = copy.deepcopy(self.stream_handler())
-                try:
-                    next_rule = rule_cls(copied_handler)
-                except RuleSyntaxError:
-                    pass
-                else:
-                    self.stream_handler().update_from_handler(copied_handler)
-                    break
-            else:
-                self._raise_syntax_error(expected=str(map(str, args)))
-
-            self._set_productions([next_rule])
-    return Alternation
-
-
-def repetition(rule):
-    """Decorator for Repetition class."""
-    class Repetition(ProductionRule):
-        def parse(self):
-            productions = []
-
-            # Keep testing until run into error
-            while True:
-                copied = copy.deepcopy(self.stream_handler())
-                try:
-                    # alternation
-                    next_rule = rule(copied)
-                except RuleSyntaxError:
-                    break
-                else:
-                    productions.append(next_rule)
-                    self.stream_handler().update_from_handler(copied)
-
-            self._set_productions(productions)
-    return Repetition
-
-
-def optional(rule):
-    class Optional(ProductionRule):
-        def parse(self):
-            productions = []
-            copied_handler = copy.deepcopy(self.stream_handler())
-            try:
-                next_rule = rule(copied_handler)
-            except RuleSyntaxError:
-                pass
-            else:
-                self.stream_handler().update_from_handler(copied_handler)
-                productions.append(next_rule)
-            self._set_productions(productions)
-
-    return Optional
-
-
-def count_diff(h1, h2):
-    return h1.char_iter().count() - h2.char_iter().count()
-
-
-def concatenation(*args):
-    """Decorator for Concatentation class."""
-    class Concatentation(ProductionRule):
-        def parse(self):
-            productions = []
-
-            for rule_cls in args:
-                prod = rule_cls(self.stream_handler())
-                productions.append(prod)
-
-            self._set_productions(productions)
-
-    return Concatentation
-
-
-def exclusion(base, *args):
-    class Exclusion(ProductionRule):
-        def parse(self):
-            productions = []
-
-            copied = copy.deepcopy(self.stream_handler())
-            prod = base(copied)
-            for excluded_rule in args:
-                try:
-                    excluded_rule(copy.deepcopy(self.stream_handler()))
-                except RuleSyntaxError:
-                    pass
-                else:
-                    self._raise_syntax_error(expected="{} excluding {}".format(base, excluded_rule))
-            productions.append(prod)
-            self.stream_handler().update_from_handler(copied)
-
-            self._set_productions(productions)
-
-    return Exclusion
-
-
 class Terminal(ProductionRule):
     def parse(self):
-        # "'", character, { character }, "'"
-        # '"', character, { character }, '"'
+        # "'", { character }, "'"
+        # '"', { character }, '"'
         self._set_productions([
             alternation(
                 concatenation(
-                    match_string("'"),
-                    AnyCharacter,
-                    repetition(exclusion(AnyCharacter, match_string("'"))),
-                    match_string("'")
+                    terminal_string("'"),
+                    repetition(exclusion(AnyCharacter, terminal_string("'"))),
+                    terminal_string("'")
                 ),
                 concatenation(
-                    match_string('"'),
-                    AnyCharacter,
-                    repetition(exclusion(AnyCharacter, match_string('"'))),
-                    match_string('"')
+                    terminal_string('"'),
+                    repetition(exclusion(AnyCharacter, terminal_string('"'))),
+                    terminal_string('"')
                 )
             )(self.stream_handler())
         ])
@@ -189,32 +61,25 @@ class Terminal(ProductionRule):
 class Identifier(ProductionRule):
     def parse(self):
         # Letter, { Letter, Digit, "_" }
-        alt = alternation(Letter, Digit, match_string("_"))
+        alt = alternation(Letter, Digit, terminal_string("_"))
         rep = repetition(alt)
         self._set_productions([concatenation(Letter, rep)(self.stream_handler())])
 
-
-class SingleWhitespace(ProductionRule):
-    def parse(self):
-        char = self._pop_char()
-        if not char.isspace():
-            self._raise_syntax_error(expected="alphabetic character")
-        self._set_productions(char)
-
-
-class Whitespace(repetition(SingleWhitespace)):
-    pass
+    def json(self):
+        return {
+            type(self).__name__: str(self)
+        }
 
 
 class Optional(ProductionRule):
     def parse(self):
         self._set_productions([
             concatenation(
-                match_string("["),
+                terminal_string("["),
                 Whitespace,
                 Productions,
                 Whitespace,
-                match_string("]")
+                terminal_string("]")
             )(self.stream_handler())
         ])
 
@@ -223,11 +88,11 @@ class Repetition(ProductionRule):
     def parse(self):
         self._set_productions([
             concatenation(
-                match_string("{"),
+                terminal_string("{"),
                 Whitespace,
                 Productions,
                 Whitespace,
-                match_string("}"),
+                terminal_string("}"),
             )(self.stream_handler())
         ])
 
@@ -236,11 +101,11 @@ class Grouping(ProductionRule):
     def parse(self):
         self._set_productions([
             concatenation(
-                match_string("("),
+                terminal_string("("),
                 Whitespace,
                 Productions,
                 Whitespace,
-                match_string(")")
+                terminal_string(")")
             )(self.stream_handler())
         ])
 
@@ -265,7 +130,7 @@ class Concatentation(ProductionRule):
                 concatenation(
                     SingleRule,
                     Whitespace,
-                    match_string(","),
+                    terminal_string(","),
                     Whitespace,
                     Concatentation
                 ),
@@ -281,7 +146,7 @@ class Alternation(ProductionRule):
                 concatenation(
                     Concatentation,
                     Whitespace,
-                    match_string("|"),
+                    terminal_string("|"),
                     Whitespace,
                     Alternation
                 ),
@@ -303,11 +168,11 @@ class Rule(ProductionRule):
             concatenation(
                 Identifier,
                 Whitespace,
-                match_string("="),
+                terminal_string("="),
                 Whitespace,
                 Productions,
                 Whitespace,
-                match_string(";"),
+                terminal_string(";"),
                 Whitespace
             )(self.stream_handler())
         ])
@@ -326,11 +191,20 @@ def test_rule(test, rule_cls):
     assert x == test, "Expected {}, found '{}'.".format(test, x)
 
 
+def test_rule_json(test, rule_cls, expected_dict):
+    test = test.strip()
+    x = rule_cls.from_str(test).json()
+    assert x == expected_dict, "Expected {}, found {}".format(
+        json.dumps(expected_dict, indent=4),
+        json.dumps(x, indent=4)
+    )
+
+
 def main():
     test_rule("A", Letter)
     test_rule("9", Digit)
     test_rule("[", Symbol)
-    test_rule("literal", match_string("literal"))
+    test_rule("literal", terminal_string("literal"))
     test_rule("AAA_9__9", Identifier)
     test_rule("'something'", Terminal)
     test_rule('"something"', Terminal)
@@ -340,7 +214,7 @@ def main():
     test_rule("2", optional(AnyCharacter))
 
     test_rule('"A" | "B"', concatenation(
-        Terminal, Whitespace, match_string("|"), Whitespace, Terminal))
+        Terminal, Whitespace, terminal_string("|"), Whitespace, Terminal))
 
     test_rule("Identifier = 'something';", Rule)
     test_rule("Identifier = 'something' | something_else | ['ayy'];", Rule)
@@ -379,6 +253,26 @@ rhs = identifier
 rule = lhs , "=" , rhs , ";" ;
 grammar = { rule } ;
               """, Grammar)
+
+    #print(json.dumps(Grammar.from_filename("ebnf_grammar.txt").json(), indent=4))
+    test_rule_json("A", Letter, {
+        "Letter": "A"
+    })
+    test_rule_json("9", Digit, {
+        "Digit": "9"
+    })
+    test_rule_json("}", Symbol, {
+        "Symbol": "}"
+    })
+    test_rule_json("literal", terminal_string("literal"), {
+        "TerminalString": "literal"
+    })
+    test_rule_json("ABCDEF__9", Identifier, {
+        "Identifier": "ABCDEF__9"
+    })
+    test_rule_json("'something'", Terminal, {
+        "Terminal": "'something'"
+    })
 
     return 0
 

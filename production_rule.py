@@ -73,7 +73,7 @@ class ProductionRule(object):
     def stream_handler(self):
         return self.__handler
 
-    def _pop_char(self):
+    def pop_char(self):
         self.__handler.pop_char()
         return self.__handler.char()
 
@@ -81,8 +81,8 @@ class ProductionRule(object):
         """Set the values of the productions property."""
         raise NotImplementedError
 
-    def _set_productions(self, productions):
-        self.__productions = productions
+    def __apply_stream(self):
+        self.__productions = self.parse()
 
     def _raise_syntax_error(self, **kwargs):
         raise RuleSyntaxError.from_stream_handler(
@@ -92,5 +92,159 @@ class ProductionRule(object):
 
     def __str__(self):
         return "".join(map(str, self.__productions))
+
+    def productions(self):
+        return self.__productions
+
+    def json(self):
+        if isinstance(self.__productions, str):
+            v = self.__productions
+        else:
+            v = [x.json() for x in self.__productions]
+        return {
+            type(self).__name__: v
+        }
+
+
+"""
+Helper rules
+"""
+
+
+def terminal_string(expected):
+    class TerminalString(ProductionRule):
+        def parse(self):
+            copied_handler = copy.deepcopy(self.stream_handler())
+            acc = ""
+            for c in expected:
+                found = self.pop_char()
+                acc += found
+                if found != c:
+                    raise RuleSyntaxError.from_stream_handler(
+                        copied_handler,
+                        expected=expected,
+                        found=found
+                    )
+            self._set_productions(acc)
+
+    return TerminalString
+
+
+def optional(rule):
+    class Optional(ProductionRule):
+        def parse(self):
+            productions = []
+            copied_handler = copy.deepcopy(self.stream_handler())
+            try:
+                next_rule = rule(copied_handler)
+            except RuleSyntaxError:
+                pass
+            else:
+                self.stream_handler().update_from_handler(copied_handler)
+                productions.append(next_rule)
+            self._set_productions(productions)
+
+    return Optional
+
+
+def alternation(*args):
+    """Decorator for Alternation class."""
+    class Alternation(ProductionRule):
+        def parse(self):
+            next_rule = None
+            for rule_cls in args:
+                copied_handler = copy.deepcopy(self.stream_handler())
+                try:
+                    next_rule = rule_cls(copied_handler)
+                except RuleSyntaxError:
+                    pass
+                else:
+                    self.stream_handler().update_from_handler(copied_handler)
+                    break
+            else:
+                self._raise_syntax_error(expected=str(map(str, args)))
+
+            self._set_productions([next_rule])
+
+    return Alternation
+
+
+def repetition(rule):
+    """Decorator for Repetition class."""
+    class Repetition(ProductionRule):
+        def parse(self):
+            productions = []
+
+            # Keep testing until run into error
+            while True:
+                copied = copy.deepcopy(self.stream_handler())
+                try:
+                    # alternation
+                    next_rule = rule(copied)
+                except RuleSyntaxError:
+                    break
+                else:
+                    productions.append(next_rule)
+                    self.stream_handler().update_from_handler(copied)
+
+            self._set_productions(productions)
+    return Repetition
+
+
+def concatenation(*args):
+    """Decorator for Concatentation class."""
+    class Concatentation(ProductionRule):
+        def parse(self):
+            productions = []
+
+            for rule_cls in args:
+                prod = rule_cls(self.stream_handler())
+                productions.append(prod)
+
+            self._set_productions(productions)
+
+    return Concatentation
+
+
+def exclusion(base, *args):
+    class Exclusion(ProductionRule):
+        def parse(self):
+            productions = []
+
+            copied = copy.deepcopy(self.stream_handler())
+            prod = base(copied)
+            for excluded_rule in args:
+                try:
+                    excluded_rule(copy.deepcopy(self.stream_handler()))
+                except RuleSyntaxError:
+                    pass
+                else:
+                    self._raise_syntax_error(expected="{} excluding {}".format(base, excluded_rule))
+            productions.append(prod)
+            self.stream_handler().update_from_handler(copied)
+
+            self._set_productions(productions)
+
+    return Exclusion
+
+
+class SingleWhitespace(ProductionRule):
+    def parse(self):
+        char = self.pop_char()
+        if not char.isspace():
+            self._raise_syntax_error(expected="alphabetic character")
+        self._set_productions(char)
+
+
+class Whitespace(repetition(SingleWhitespace)):
+    pass
+
+
+class AnyCharacter(ProductionRule):
+    def parse(self):
+        char = self.pop_char()
+        if not char:
+            self._raise_syntax_error(expected="a character")
+        self._set_productions(char)
 
 
