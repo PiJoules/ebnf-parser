@@ -17,6 +17,10 @@ class StreamHandler(object):
         self.__col_no = col_no
         self.__char = starting_char
 
+    @classmethod
+    def from_str(cls, s):
+        return cls(ExtendedIterator(iter(s)))
+
     def char(self):
         return self.__char
 
