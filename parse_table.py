@@ -117,10 +117,8 @@ def repetition(rule_cls):
             rule = rule_cls()
             if rule.matches(lookahead):
                 return [rule, repetition(rule_cls)()]
-            elif not lookahead:
-                return []
             else:
-                return [rule]
+                return []
 
         def check(self, symbol):
             # Really, repetition will match againnst anything since it could
@@ -267,7 +265,7 @@ def main():
     test_rule("fkshff", repetition(exclusion(AnyCharacter, terminal_string("'"))))
     test_rule("ab", concatenation(AnyCharacter, AnyCharacter))
     test_rule("''", Terminal)
-    #test_rule("'some string'", Terminal)
+    test_rule("'some string'", Terminal)
 
     # Fails on alternation of repetitions
     #test_rule("9", alternation(repetition(Letter), repetition(Digit), repetition(Symbol)))
