@@ -113,8 +113,15 @@ class StreamHandler(object):
     def pos(self):
         return self.__char_iter.count()
 
-    def peek(self, n=1):
+    def peek_n(self, n):
         return self.__char_iter.peek(n)
+
+    def peek(self):
+        found = self.peek_n(1)
+        if found:
+            return found[0]
+        else:
+            return ""
 
     def up_to(self, i):
         copied = copy.deepcopy(self)
