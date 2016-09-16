@@ -6,6 +6,7 @@ from __future__ import print_function
 from stream_handler import *
 
 import string
+import json
 
 
 class ProductionRuleError(Exception):
@@ -25,42 +26,27 @@ class ProductionRule(object):
     def __str__(self):
         return "".join(map(str, self.__productions))
 
-    def __hash__(self):
-        return hash(type(self))
-
-    def check_and_apply(self, symbol):
-        self.check(symbol)
-        self.apply_symbols(symbol)
+    def json(self):
+        return {
+            type(self).__name__: [x.json() if isinstance(x, ProductionRule) else x for x in self.__productions]
+        }
 
     def matches(self, symbol):
         """Returns true if this symbaol can match to this rule. False otherwise."""
-        try:
-            self.check(symbol)
-        except ProductionRuleError:
-            return False
-        else:
-            return True
-
-    def check(self, symbol):
-        """Raises runtime error if the symbol does not match the rule."""
-        raise NotImplementedError
+        return self.get_rules(symbol) is not None
 
     def get_rules(self, lookahead):
         raise NotImplementedError
 
 
-class TerminalRule(ProductionRule):
-    pass
+class StringRule(ProductionRule):
+    def json(self):
+        return "".join(self.productions())
 
 
-def is_terminal(symbol):
-    return isinstance(symbol, TerminalRule)
-
-
-class AnyCharacter(TerminalRule):
-    def check(self, symbol):
-        if not symbol:
-            raise ProductionRuleError("Expected literally any character. No character provided.")
+class AnyCharacter(StringRule):
+    def get_rules(self, lookahead):
+        return [lookahead] if lookahead else None
 
 
 """
@@ -68,28 +54,15 @@ Builtins
 """
 
 def terminal_string(s):
-    if s:
-        expected = s[0]
-    else:
-        expected = ""
-
-    class TerminalRuleString(ProductionRule):
+    class TerminalStringRule(StringRule):
         def get_rules(self, lookahead):
+            expected = "" if not s else s[0]
             if lookahead == expected:
-                if len(s) == 1:
-                    return [AnyCharacter()]
-                elif not s:
-                    return []
-                else:
-                    return [AnyCharacter(), terminal_string(s[1:])()]
+                return list(s)
             else:
                 return None
 
-        def check(self, lookahead):
-            if self.get_rules(lookahead) is None:
-                raise ProductionRuleError("Expected '{}' in terminal string. Found '{}'.".format(expected, lookahead))
-
-    return TerminalRuleString
+    return TerminalStringRule
 
 
 def alternation(*args):
@@ -101,12 +74,9 @@ def alternation(*args):
                     return [rule]
             return None
 
-        def check(self, symbol):
-            for rule_cls in args:
-                if rule_cls().matches(symbol):
-                    break
-            else:
-                raise ProductionRuleError("Expected one of '{}'. Found '{}'.".format([x.__name__ for x in args], symbol))
+        def json(self):
+            assert len(self.productions()) == 1
+            return self.productions()[0].json()
 
     return Alternation
 
@@ -120,10 +90,17 @@ def repetition(rule_cls):
             else:
                 return []
 
-        def check(self, symbol):
-            # Really, repetition will match againnst anything since it could
-            # be a length of zero
-            pass
+        def repeating_rules(self, acc):
+            prods = self.productions()
+            if prods:
+                assert len(self.productions()) == 2
+                acc.append(prods[0].json())
+                prods[1].repeating_rules(acc)
+
+        def json(self):
+            repetitions = []
+            self.repeating_rules(repetitions)
+            return repetitions
 
     return Repetition
 
@@ -140,64 +117,51 @@ def exclusion(rule_cls, *args):
             else:
                 return None
 
-        def check(self, lookahead):
-            rule_cls().check(lookahead)
-            for other_rule_cls in args:
-                if other_rule_cls().matches(lookahead):
-                    raise ProductionRuleError("Expected '{}' but excluding '{}'. Found '{}'.".format(rule_cls, args, lookahead))
+        def json(self):
+            prods = self.productions()
+            assert len(prods) == 1
+            return prods[0].json()
 
     return Exclusion
 
 
-def concatenation(*args):
-    class Concatentation(ProductionRule):
+def optional(rule_cls):
+    class Optional(ProductionRule):
         def get_rules(self, lookahead):
-            rules = [cls() for cls in args]
-            if not rules:
-                return []
-            elif rules[0].matches(lookahead):
-                # Continue with first rule
-                if len(rules) == 1:
-                    return [rules[0]]
-                else:
-                    return [rules[0], concatenation(*args[1:])()]
+            rule = rule_cls()
+            if rule.matches(lookahead):
+                return [rule]
             else:
-                return None
+                return []
 
-        def check(self, lookahead):
-            pass
-
-    return Concatentation
+    return Optional
 
 
 """
 Custom rules
 """
 
-class Letter(TerminalRule):
-    def check(self, symbol):
-        if not symbol:
-            raise ProductionRuleError("Expected a letter. Found none.")
-
-        if symbol not in string.ascii_letters:
-            raise ProductionRuleError("Expected ascii letter. Found '{}'.".format(symbol))
+class Letter(StringRule):
+    def get_rules(self, lookahead):
+        if lookahead and lookahead in string.ascii_letters:
+            return [lookahead]
+        return None
 
 
-class Digit(TerminalRule):
-    def check(self, symbol):
-        if not symbol.isdigit():
-            raise ProductionRuleError("Expected digit. Found '{}'.".format(symbol))
+class Digit(StringRule):
+    def get_rules(self, lookahead):
+        if lookahead.isdigit():
+            return [lookahead]
+        return None
 
 
-class Symbol(TerminalRule):
+class Symbol(StringRule):
     SYMBOLS = "[]{}()<>'\"=|.,;"
 
-    def check(self, symbol):
-        if not symbol:
-            raise ProductionRuleError("Expected symbol. Found none.")
-
-        if symbol not in self.SYMBOLS:
-            raise ProductionRuleError("Expected one of the characters in '{}'. Found '{}'.".format(self.SYMBOLS, symbol))
+    def get_rules(self, lookahead):
+        if lookahead and lookahead in self.SYMBOLS:
+            return [lookahead]
+        return None
 
 
 class Identifier(ProductionRule):
@@ -205,14 +169,68 @@ class Identifier(ProductionRule):
         return [Letter(), repetition(alternation(Letter, Digit, Symbol))()]
 
 
+class EscapeCharacter(ProductionRule):
+    def get_rules(self, lookahead):
+        if lookahead == "\\":
+            return [terminal_string("\\")(), AnyCharacter()]
+        else:
+            return None
+
+
 class Terminal(ProductionRule):
     def get_rules(self, lookahead):
-        #return [terminal_string("'")(), repetition(exclusion(AnyCharacter, terminal_string("'")))(), terminal_string("'")()]
-        return [concatenation(
-            terminal_string("'"),
-            repetition(exclusion(AnyCharacter, terminal_string("'"))),
-            terminal_string("'"),
-        )()]
+        if lookahead == "'":
+            return [
+                terminal_string("'")(),
+                repetition(
+                    alternation(
+                        exclusion(AnyCharacter, terminal_string("'"), terminal_string("\\")),
+                        EscapeCharacter
+                    )
+                )(),
+                terminal_string("'")()
+            ]
+        elif lookahead == '"':
+            return [
+                terminal_string('"')(),
+                repetition(
+                    alternation(
+                        exclusion(AnyCharacter, terminal_string('"'), terminal_string("\\")),
+                        EscapeCharacter
+                    )
+                )(),
+                terminal_string('"')()
+            ]
+        else:
+            return None
+
+
+class SingleWhitespace(StringRule):
+    def get_rules(self, lookahead):
+        if lookahead.isspace():
+            return [lookahead]
+        return None
+
+
+class Whitespace(repetition(SingleWhitespace)):
+    pass
+
+
+class Optional(ProductionRule):
+    pass
+
+
+class Rule(ProductionRule):
+    def get_rules(self, lookahead):
+        if Identifier().matches(lookahead):
+            return [
+                Identifier(),
+                Whitespace(),
+                terminal_string("=")(),
+                Whitespace(),
+            ]
+        else:
+            return None
 
 
 def table_parse(stream, starting_rule):
@@ -223,10 +241,9 @@ def table_parse(stream, starting_rule):
         top_rule = stack[-1]
         current_token = stream.peek()
 
-        if is_terminal(top_rule):
-            top_rule.check_and_apply(current_token)
-            stream.pop_char()
+        if top_rule == current_token:
             stack.pop()
+            stream.pop_char()
         else:
             symbols = top_rule.get_rules(current_token)
             if symbols is not None:
@@ -242,30 +259,91 @@ def table_parse(stream, starting_rule):
     return head
 
 
-def test_rule(s, rule_cls):
-    s = s.strip()
-    prod = table_parse(StreamHandler.from_str(s), rule_cls)
-    assert s == str(prod), "Expected '{}'. Found '{}'.".format(s, prod)
+def quick_prod(s, rule_cls, strip=True):
+    s = s.strip() if strip else s
+    return table_parse(StreamHandler.from_str(s), rule_cls)
+
+
+def test_rule(s, rule_cls, strip=True, json=None):
+    prod = quick_prod(s, rule_cls, strip=strip)
+    assert s == str(prod), "Expected \"{}\". Found \"{}\".".format(s, prod)
+    if json:
+        assert prod.json() == json, "Expected \n{}\nFound\n{}".format(json, prod.json())
+
+
+def print_rule(s, rule_cls, strip=True):
+    prod = quick_prod(s, rule_cls, strip=strip)
+    print(json.dumps(prod.json(), indent=4))
 
 
 def main():
-    test_rule("A", Letter)
-    test_rule("9", Digit)
-    test_rule("]", Symbol)
-    test_rule("abc", terminal_string("abc"))
-    test_rule("", terminal_string(""))
-    test_rule("ABCHJGHJG", Identifier)
-    test_rule("ABCHJGHJG", repetition(Letter))
-    test_rule("", repetition(Letter))
-    test_rule("A", alternation(Letter, Digit, Symbol))
-    test_rule("9", alternation(Letter, Digit, Symbol))
-    test_rule(")", alternation(Letter, Digit, Symbol))
-    test_rule(")89dfg", repetition(alternation(Letter, Digit, Symbol)))
-    test_rule("a", exclusion(AnyCharacter, terminal_string("b")))
-    test_rule("fkshff", repetition(exclusion(AnyCharacter, terminal_string("'"))))
-    test_rule("ab", concatenation(AnyCharacter, AnyCharacter))
-    test_rule("''", Terminal)
-    test_rule("'some string'", Terminal)
+    test_rule("A", Letter, json="A")
+    test_rule("9", Digit, json="9")
+    test_rule("]", Symbol, json="]")
+    test_rule("abc", terminal_string("abc"), json="abc")
+    test_rule("", terminal_string(""), json="")
+    test_rule("ABCD", Identifier, json={
+        "Identifier": [
+            "A",
+            ["B", "C", "D"]
+        ]
+    })
+    test_rule("ABC", repetition(Letter), json=["A", "B", "C"])
+    test_rule("", repetition(Letter), json=[])
+    test_rule("A", alternation(Letter, Digit, Symbol), json="A")
+    test_rule("9", alternation(Letter, Digit, Symbol), json="9")
+    test_rule(")", alternation(Letter, Digit, Symbol), json=")")
+    test_rule(")89dfg", repetition(alternation(Letter, Digit, Symbol)), json=
+        [")", "8", "9", "d", "f", "g"]
+    )
+    test_rule("a", exclusion(AnyCharacter, terminal_string("b")), json="a")
+    test_rule("fkshff", repetition(exclusion(AnyCharacter, terminal_string("'"))), json=[
+        "f", "k", "s", "h", "f", "f"
+    ])
+    test_rule("''", Terminal, json={
+        "Terminal": ["'", [], "'"]
+    })
+    test_rule("\\s", EscapeCharacter, json={
+        "EscapeCharacter": ["\\", "s"]
+    })
+    test_rule("'\\''", Terminal, json={
+        "Terminal": [
+            "'",
+            [{
+                "EscapeCharacter": ["\\", "'"]
+            }],
+            "'"
+        ]
+    })
+    test_rule("'some string'", Terminal, json={
+        "Terminal": ["'", list("some string"), "'"]
+    })
+    test_rule("'some \\string'", Terminal, json={
+        "Terminal": ["'", list("some ") + [{"EscapeCharacter": ["\\", "s"]}] + list("tring"), "'"]
+    })
+    test_rule('"\\""', Terminal, json={
+        "Terminal": [
+            '"',
+            [{
+                "EscapeCharacter": ["\\", '"']
+            }],
+            '"'
+        ]
+    })
+    test_rule('"some string"', Terminal, json={
+        "Terminal": ['"', list("some string"), '"']
+    })
+    test_rule('"some \\string"', Terminal, json={
+        "Terminal": ['"', list("some ") + [{"EscapeCharacter": ["\\", "s"]}] + list("tring"), '"']
+    })
+    test_rule("", optional(Digit))
+    test_rule("2", optional(Digit))
+    test_rule(" ", SingleWhitespace, strip=False)
+    test_rule("\n", SingleWhitespace, strip=False)
+    test_rule("     ", Whitespace, strip=False)
+
+    #print(json.dumps(table_parse(StreamHandler.from_str("ABCD"), Identifier).json(), indent=4))
+    print_rule("abc", terminal_string("abc"))
 
     # Fails on alternation of repetitions
     #test_rule("9", alternation(repetition(Letter), repetition(Digit), repetition(Symbol)))
