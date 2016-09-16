@@ -183,9 +183,16 @@ class Whitespace(repetition(SingleWhitespace)):
 Custom rules provided by grammar
 """
 
+PARSE_TABLE = {
+}
+
+
 class Identifier(ProductionRule):
     def get_rules(self, lookahead):
-        return [Letter(), repetition(alternation(Letter, Digit, Symbol))()]
+        if Letter().matches(lookahead):
+            return [Letter(), repetition(alternation(Letter, Digit, Symbol))()]
+        else:
+            return None
 
 
 class EscapeCharacter(ProductionRule):
