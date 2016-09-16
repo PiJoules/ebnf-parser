@@ -243,23 +243,6 @@ class Terminal(ProductionRule):
             return None
 
 
-class Alternation(ProductionRule):
-    pass
-
-
-class Rule(ProductionRule):
-    def get_rules(self, lookahead):
-        if Identifier().matches(lookahead):
-            return [
-                Identifier(),
-                Whitespace(),
-                terminal_string("=")(),
-                Whitespace(),
-            ]
-        else:
-            return None
-
-
 def table_parse(stream, starting_rule):
     stack = [starting_rule()]
     head = stack[-1]
