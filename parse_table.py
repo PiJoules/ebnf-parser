@@ -20,8 +20,8 @@ class ProductionRule(object):
     def productions(self):
         return self.__productions
 
-    def apply_symbols(self, symbols):
-        self.__productions = symbols
+    def apply_rules(self, rules):
+        self.__productions = rules
 
     def __str__(self):
         return "".join(map(str, self.__productions))
@@ -40,6 +40,7 @@ class ProductionRule(object):
 
 
 class StringRule(ProductionRule):
+    """Rule for literal strings and characters."""
     def json(self):
         return "".join(self.productions())
 
@@ -134,12 +135,14 @@ def optional(rule_cls):
             else:
                 return []
 
+        def json(self):
+            prods = self.productions()
+            if prods:
+                assert len(prods) == 1
+                return prods[0].json()
+
     return Optional
 
-
-"""
-Custom rules
-"""
 
 class Letter(StringRule):
     def get_rules(self, lookahead):
@@ -163,6 +166,22 @@ class Symbol(StringRule):
             return [lookahead]
         return None
 
+
+class SingleWhitespace(StringRule):
+    def get_rules(self, lookahead):
+        if lookahead.isspace():
+            return [lookahead]
+        return None
+
+
+class Whitespace(repetition(SingleWhitespace)):
+    def json(self):
+        return "".join(super(Whitespace, self).json())
+
+
+"""
+Custom rules provided by grammar
+"""
 
 class Identifier(ProductionRule):
     def get_rules(self, lookahead):
@@ -205,18 +224,7 @@ class Terminal(ProductionRule):
             return None
 
 
-class SingleWhitespace(StringRule):
-    def get_rules(self, lookahead):
-        if lookahead.isspace():
-            return [lookahead]
-        return None
-
-
-class Whitespace(repetition(SingleWhitespace)):
-    pass
-
-
-class Optional(ProductionRule):
+class Alternation(ProductionRule):
     pass
 
 
@@ -245,11 +253,11 @@ def table_parse(stream, starting_rule):
             stack.pop()
             stream.pop_char()
         else:
-            symbols = top_rule.get_rules(current_token)
-            if symbols is not None:
-                top_rule.apply_symbols(symbols)
+            rules = top_rule.get_rules(current_token)
+            if rules is not None:
+                top_rule.apply_rules(rules)
                 stack.pop()
-                stack += list(reversed(symbols))
+                stack += list(reversed(rules))
             else:
                 raise RuntimeError("Unable to handle token '{}' for rule '{}'. {}".format(current_token, type(top_rule).__name__, stream))
 
@@ -336,14 +344,11 @@ def main():
     test_rule('"some \\string"', Terminal, json={
         "Terminal": ['"', list("some ") + [{"EscapeCharacter": ["\\", "s"]}] + list("tring"), '"']
     })
-    test_rule("", optional(Digit))
-    test_rule("2", optional(Digit))
-    test_rule(" ", SingleWhitespace, strip=False)
-    test_rule("\n", SingleWhitespace, strip=False)
-    test_rule("     ", Whitespace, strip=False)
-
-    #print(json.dumps(table_parse(StreamHandler.from_str("ABCD"), Identifier).json(), indent=4))
-    print_rule("abc", terminal_string("abc"))
+    test_rule("", optional(Digit), json="")
+    test_rule("2", optional(Digit), json="2")
+    test_rule(" ", SingleWhitespace, strip=False, json=" ")
+    test_rule("\n", SingleWhitespace, strip=False, json="\n")
+    test_rule("     ", Whitespace, strip=False, json="     ")
 
     # Fails on alternation of repetitions
     #test_rule("9", alternation(repetition(Letter), repetition(Digit), repetition(Symbol)))
