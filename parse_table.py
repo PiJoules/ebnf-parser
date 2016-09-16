@@ -31,13 +31,19 @@ class ProductionRule(object):
             type(self).__name__: [x.json() if isinstance(x, ProductionRule) else x for x in self.__productions]
         }
 
-    def matches(self, symbol):
+    @classmethod
+    def matches(cls, symbol):
         """Returns true if this symbaol can match to this rule. False otherwise."""
-        return self.get_rules(symbol) is not None
+        return cls.get_rules(symbol) is not None
 
+    @classmethod
     def get_rules(self, lookahead):
         raise NotImplementedError
 
+
+"""
+Builtins
+"""
 
 class StringRule(ProductionRule):
     """Rule for literal strings and characters."""
@@ -46,17 +52,15 @@ class StringRule(ProductionRule):
 
 
 class AnyCharacter(StringRule):
-    def get_rules(self, lookahead):
+    @classmethod
+    def get_rules(cls, lookahead):
         return [lookahead] if lookahead else None
 
 
-"""
-Builtins
-"""
-
 def terminal_string(s):
     class TerminalStringRule(StringRule):
-        def get_rules(self, lookahead):
+        @classmethod
+        def get_rules(cls, lookahead):
             expected = "" if not s else s[0]
             if lookahead == expected:
                 return list(s)
@@ -68,11 +72,11 @@ def terminal_string(s):
 
 def alternation(*args):
     class Alternation(ProductionRule):
-        def get_rules(self, lookahead):
+        @classmethod
+        def get_rules(cls, lookahead):
             for rule_cls in args:
-                rule = rule_cls()
-                if rule.matches(lookahead):
-                    return [rule]
+                if rule_cls.matches(lookahead):
+                    return [rule_cls]
             return None
 
         def json(self):
@@ -84,10 +88,10 @@ def alternation(*args):
 
 def repetition(rule_cls):
     class Repetition(ProductionRule):
-        def get_rules(self, lookahead):
-            rule = rule_cls()
-            if rule.matches(lookahead):
-                return [rule, repetition(rule_cls)()]
+        @classmethod
+        def get_rules(cls, lookahead):
+            if rule_cls.matches(lookahead):
+                return [rule_cls, repetition(rule_cls)]
             else:
                 return []
 
@@ -108,13 +112,13 @@ def repetition(rule_cls):
 
 def exclusion(rule_cls, *args):
     class Exclusion(ProductionRule):
-        def get_rules(self, lookahead):
-            rule = rule_cls()
-            if rule.matches(lookahead):
+        @classmethod
+        def get_rules(cls, lookahead):
+            if rule_cls.matches(lookahead):
                 for other_rule_cls in args:
-                    if other_rule_cls().matches(lookahead):
+                    if other_rule_cls.matches(lookahead):
                         return None
-                return [rule]
+                return [rule_cls]
             else:
                 return None
 
@@ -128,10 +132,10 @@ def exclusion(rule_cls, *args):
 
 def optional(rule_cls):
     class Optional(ProductionRule):
-        def get_rules(self, lookahead):
-            rule = rule_cls()
-            if rule.matches(lookahead):
-                return [rule]
+        @classmethod
+        def get_rules(cls, lookahead):
+            if rule_cls.matches(lookahead):
+                return [rule_cls]
             else:
                 return []
 
@@ -145,14 +149,16 @@ def optional(rule_cls):
 
 
 class Letter(StringRule):
-    def get_rules(self, lookahead):
+    @classmethod
+    def get_rules(cls, lookahead):
         if lookahead and lookahead in string.ascii_letters:
             return [lookahead]
         return None
 
 
 class Digit(StringRule):
-    def get_rules(self, lookahead):
+    @classmethod
+    def get_rules(cls, lookahead):
         if lookahead.isdigit():
             return [lookahead]
         return None
@@ -161,20 +167,23 @@ class Digit(StringRule):
 class Symbol(StringRule):
     SYMBOLS = "[]{}()<>'\"=|.,;"
 
-    def get_rules(self, lookahead):
-        if lookahead and lookahead in self.SYMBOLS:
+    @classmethod
+    def get_rules(cls, lookahead):
+        if lookahead and lookahead in cls.SYMBOLS:
             return [lookahead]
         return None
 
 
 class SingleWhitespace(StringRule):
-    def get_rules(self, lookahead):
+    @classmethod
+    def get_rules(cls, lookahead):
         if lookahead.isspace():
             return [lookahead]
         return None
 
 
 class Whitespace(repetition(SingleWhitespace)):
+    """Multiple optional whitespace."""
     def json(self):
         return "".join(super(Whitespace, self).json())
 
@@ -188,44 +197,47 @@ PARSE_TABLE = {
 
 
 class Identifier(ProductionRule):
-    def get_rules(self, lookahead):
-        if Letter().matches(lookahead):
-            return [Letter(), repetition(alternation(Letter, Digit, Symbol))()]
+    @classmethod
+    def get_rules(cls, lookahead):
+        if Letter.matches(lookahead):
+            return [Letter, repetition(alternation(Letter, Digit, Symbol))]
         else:
             return None
 
 
 class EscapeCharacter(ProductionRule):
-    def get_rules(self, lookahead):
+    @classmethod
+    def get_rules(cls, lookahead):
         if lookahead == "\\":
-            return [terminal_string("\\")(), AnyCharacter()]
+            return [terminal_string("\\"), AnyCharacter]
         else:
             return None
 
 
 class Terminal(ProductionRule):
-    def get_rules(self, lookahead):
+    @classmethod
+    def get_rules(cls, lookahead):
         if lookahead == "'":
             return [
-                terminal_string("'")(),
+                terminal_string("'"),
                 repetition(
                     alternation(
                         exclusion(AnyCharacter, terminal_string("'"), terminal_string("\\")),
                         EscapeCharacter
                     )
-                )(),
-                terminal_string("'")()
+                ),
+                terminal_string("'")
             ]
         elif lookahead == '"':
             return [
-                terminal_string('"')(),
+                terminal_string('"'),
                 repetition(
                     alternation(
                         exclusion(AnyCharacter, terminal_string('"'), terminal_string("\\")),
                         EscapeCharacter
                     )
-                )(),
-                terminal_string('"')()
+                ),
+                terminal_string('"')
             ]
         else:
             return None
@@ -253,17 +265,16 @@ def table_parse(stream, starting_rule):
     head = stack[-1]
 
     while stack:
-        top_rule = stack[-1]
+        top_rule = stack.pop()
         current_token = stream.peek()
 
         if top_rule == current_token:
-            stack.pop()
             stream.pop_char()
         else:
             rules = top_rule.get_rules(current_token)
             if rules is not None:
+                rules = tuple(r if isinstance(r, str) else r() for r in rules)
                 top_rule.apply_rules(rules)
-                stack.pop()
                 stack += list(reversed(rules))
             else:
                 raise RuntimeError("Unable to handle token '{}' for rule '{}'. {}".format(current_token, type(top_rule).__name__, stream))
