@@ -576,7 +576,7 @@ def main():
               """
     test_rule(test, Grammar)
 
-    test_rule("""letter = "A" | "B" | "C" | "D" | "E" | "F" | "G"
+    test = """letter = "A" | "B" | "C" | "D" | "E" | "F" | "G"
        | "H" | "I" | "J" | "K" | "L" | "M" | "N"
        | "O" | "P" | "Q" | "R" | "S" | "T" | "U"
        | "V" | "W" | "X" | "Y" | "Z" | "a" | "b"
@@ -604,7 +604,8 @@ rhs = identifier
 
 rule = lhs , "=" , rhs , ";" ;
 grammar = { rule } ;
-              """, Grammar)
+              """
+    test_rule(test, Grammar)
 
     # Fails on alternation of repetitions
     #test_rule("9", alternation(repetition(Letter), repetition(Digit), repetition(Symbol)))
