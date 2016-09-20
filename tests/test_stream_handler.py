@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from utils import char_generator
-from stream_handler import StreamHandler
-from iterator_tools import ExtendedIterator
+from parser_gen.utils import char_generator
+from parser_gen.stream_handler import StreamHandler
+from parser_gen.iterator_tools import ExtendedIterator
 
 import unittest
 import copy

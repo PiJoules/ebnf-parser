@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from iterator_tools import *
+from parser_gen.iterator_tools import *
 
 import copy
 import unittest
