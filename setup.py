@@ -23,7 +23,7 @@ setup(
     version="0.0.1",
     description="EBNF Parser and Grammar Parser Generator",
     long_description=long_description(),
-    #url="https://github.com/PiJoules/pc",
+    url="https://github.com/PiJoules/ebnf-parser",
     author="Leonard Chan",
     author_email="lchan1994@yahoo.com",
     license="Unlicense",
@@ -36,6 +36,7 @@ setup(
     test_suite="nose.collector",
     entry_points={
         "console_scripts": [
+            "create_parser=scripts.create_parser:main",
         ],
     },
 )
