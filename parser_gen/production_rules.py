@@ -328,11 +328,29 @@ class SingleProduction(ProductionRule):
             return None
 
 
+class MaybeExclusion(ProductionRule):
+    @classmethod
+    def get_rules(cls, *lookaheads):
+        if terminal("-").matches(lookaheads[0]):
+            return [terminal("-"), Whitespace, SingleProduction, Whitespace]
+        else:
+            return None
+
+
+class Exclusion(ProductionRule):
+    @classmethod
+    def get_rules(cls, *lookaheads):
+        if SingleProduction.matches(lookaheads[0]):
+            return [SingleProduction, Whitespace, repetition(MaybeExclusion)]
+        else:
+            return None
+
+
 class MaybeConcatenation(ProductionRule):
     @classmethod
     def get_rules(cls, *lookaheads):
         if terminal(",").matches(lookaheads[0]):
-            return [terminal(","), Whitespace, SingleProduction, Whitespace]
+            return [terminal(","), Whitespace, Exclusion, Whitespace]
         else:
             return None
 
@@ -340,8 +358,8 @@ class MaybeConcatenation(ProductionRule):
 class Concatenation(ProductionRule):
     @classmethod
     def get_rules(cls, *lookaheads):
-        if SingleProduction.matches(lookaheads[0]):
-            return [SingleProduction, Whitespace, repetition(MaybeConcatenation)]
+        if Exclusion.matches(lookaheads[0]):
+            return [Exclusion, Whitespace, repetition(MaybeConcatenation)]
         else:
             return None
 

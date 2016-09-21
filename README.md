@@ -7,3 +7,5 @@ After creating virtualenv
 (venv) $ create_parser ebnf_grammar.txt
 ```
 
+## TODO
+- Add option to ignore whitespace
