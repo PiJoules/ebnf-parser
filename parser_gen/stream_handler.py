@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from utils import SlotDefinedClass
+from utils import SlotDefinedClass, char_generator
 from iterator_tools import ExtendedIterator, all_iterator_partitions, copy_iterator, sum_to_n
 
 import itertools
@@ -20,6 +20,10 @@ class StreamHandler(object):
     @classmethod
     def from_str(cls, s):
         return cls(ExtendedIterator(iter(s)))
+
+    @classmethod
+    def from_filename(cls, filename):
+        return cls(ExtendedIterator(char_generator(filename)))
 
     def char(self):
         return self.__char

@@ -1,0 +1,14 @@
+grammar = {rule};
+rule = identifier, whitespace, "=", whitespace, alternation, whitespace, ";", whitespace;
+alternation = concatenation, whitespace, {maybe_alternation};
+maybe_alternation = "|", whitespace, concatenation;
+concatenation = single_production, whitespace, {maybe_concatenation};
+maybe_concatenation = ",", whitespace, single_production, whitespace;
+single_production = identifier | terminal | optional | repetition | grouping;
+grouping = "(", whitespace, alternation, whitespace, ")";
+repetition = "{", whitespace, alternation, whitespace, "}";
+optional = "[", whitespace, alternation, whitespace, "]";
+terminal = "'", {any_character - "'" - "\\" | escape_character}, "'" |
+           '"', {any_character - '"' - "\\" | escape_character}, '"';
+escape_character = "\\", any_character;
+identifier = letter, {letter | digit | "_"};

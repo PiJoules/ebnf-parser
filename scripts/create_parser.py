@@ -6,6 +6,7 @@ from __future__ import print_function
 from parser_gen.production_rules import Grammar
 from parser_gen.parse import table_parse
 from parser_gen.utils import base_parse_args
+from parser_gen.stream_handler import StreamHandler
 
 
 def get_args():
@@ -21,6 +22,7 @@ def main():
     args = get_args()
 
     filename = args.grammar
+    grammar = table_parse(StreamHandler.from_filename(filename), Grammar)
 
     return 0
 
