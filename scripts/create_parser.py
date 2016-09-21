@@ -23,6 +23,7 @@ def main():
 
     filename = args.grammar
     grammar = table_parse(StreamHandler.from_filename(filename), Grammar)
+    print(grammar.json())
 
     return 0
 

@@ -1,9 +1,9 @@
-## TODO
-- Switch from recursive decent to table driven parsing
+# EBNF Parser Generator
 
 ## Usage
-### Tabel Driven
+After creating virtualenv
 ```sh
-$ python parse_table.py  # Just runs unit tests for now
+(venv) $ ./setup.sh  # Install everything into the virtualenv
+(venv) $ create_parser ebnf_grammar.txt
 ```
 
